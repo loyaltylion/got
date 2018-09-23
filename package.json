@@ -37,6 +37,8 @@
 		"@sindresorhus/is": "^0.12.0",
 		"@szmarczak/http-timer": "^1.1.0",
 		"cacheable-request": "^5.1.0",
+		"@types/form-data": "^2.2.1",
+		"@types/tough-cookie": "^2.3.3",
 		"decompress-response": "^3.3.0",
 		"duplexer3": "^0.1.4",
 		"get-stream": "^4.1.0",
@@ -62,6 +64,7 @@
 		"tempfile": "^2.0.0",
 		"tempy": "^0.2.1",
 		"tough-cookie": "^2.4.3",
+		"tsd-check": "^0.2.1",
 		"xo": "^0.23.0"
 	},
 	"ava": {
