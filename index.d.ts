@@ -25,7 +25,7 @@ export namespace Got {
 
 	interface RequestFunction {
 		(url: Url): Promise<string>;
-		(url: Url, options?: Options): Response;
+		(url: Url, options?: Options): Promise<Response>;
 	}
 
 	export interface Hooks {
