@@ -11,7 +11,7 @@ type RequestMethod = "GET" | "PUT" | "HEAD" | "DELETE" | "OPTIONS" | "TRACE";
 
 // type Got
 
-declare namespace Got {
+export namespace Got {
 	type RetryFunction = (retry: unknown, error: unknown) => number;
 
 	type BeforeRequestHook = (options: object) => void;
@@ -221,6 +221,21 @@ declare namespace Got {
 		hooks?: Hooks;
 	}
 
+	export class StandardError extends Error {
+		code?: string;
+		host?: string;
+		hostname?: string;
+		method?: string;
+		path?: string;
+		protocol?: string;
+		url?: string;
+		response?: any;
+	}
+
+	export class CacheError extends StandardError {
+		name: "CacheError";
+	}
+
 	export class RequestError extends StandardError {
 		name: "RequestError";
 	}
@@ -257,24 +272,19 @@ declare namespace Got {
 		name: "CancelError";
 	}
 
-	export class StandardError extends Error {
-		code?: string;
-		host?: string;
-		hostname?: string;
-		method?: string;
-		path?: string;
-		protocol?: string;
-		url?: string;
-		response?: any;
+	export class TimeoutError extends StandardError {
+		name: "TimeoutError";
 	}
 
 	type Error =
+		| CacheError
 		| RequestError
 		| ReadError
 		| ParseError
 		| HTTPError
 		| MaxRedirectsError
 		| UnsupportedProtocolError
+		| TimeoutError
 		| CancelError;
 
 	export type Stream = {
@@ -540,11 +550,10 @@ declare namespace Got {
 	}
 }
 
-interface Got {
+export interface GotFunction {
 	/**
 	 * Sets `options.stream` to `true`.
 	 */
-
 	stream: Got.StreamFunction;
 	get: Got.RequestFunction;
 	post: Got.RequestFunction;
@@ -552,9 +561,10 @@ interface Got {
 	patch: Got.RequestFunction;
 	head: Got.RequestFunction;
 	delete: Got.RequestFunction;
-	(url: Got.Url, options?: Got.Options): Response;
+	extend(options: Got.Options): GotFunction;
+	(url: Got.Url, options?: Got.Options): Promise<Got.Response>;
 }
 
-declare const got: Got;
+declare const got: GotFunction;
 
 export default got;

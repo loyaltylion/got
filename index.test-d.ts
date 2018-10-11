@@ -1,45 +1,44 @@
-import { expectType } from 'tsd-check';
-import got, { Got, HTTPError, TimeoutError, ResponsePromise, Hooks } from '.';
-import { createServer } from './test/helpers/server';
+import { expectType } from "tsd-check";
+import got, { Got, GotFunction } from ".";
+import { createServer } from "./test/helpers/server";
 
-const server = await createServer() as any;
+createServer().then(server => {
+	server.on("/", (_request, response) => {
+		response.end();
+	});
 
-server.on('/', (request, response) => {
-  response.end();
+	server.on("/", (_request, response) => {
+		response.end();
+	});
+
+	server.on("/timeout", (_request, response) => {
+		setTimeout(() => response.end(), 11000);
+	});
+
+	const serverUrl: string = (server as any).url;
+
+	got(serverUrl, {
+		hooks: {
+			beforeRequest: [
+				options => {
+					expectType<Object>(options);
+				}
+			]
+		}
+	});
+
+	expectType<Promise<Got.Response>>(got(serverUrl));
 });
-
-server.on('/timeout', (request, response) => {
-  setTimeout(() => response.end(), 11000);
-});
-
 
 // Test Got
-expectType<ResponsePromise>(got(server.url));
 
-const requestMethods = [
-  'get',
-  'post',
-  'put',
-  'patch',
-  'head',
-  'delete'
-];
+const requestMethods = ["get", "post", "put", "patch", "head", "delete"];
 
 // Test Got HTTP methods
-requestMethods.map(async (key) => {
-  expectType<ResponsePromise>(await got[key]());
+requestMethods.map(async key => {
+	expectType<Got.Response>(await got[key]());
 });
 
-expectType<Got>(got.extend({}));
-expectType<HTTPError>(new HTTPError());
-expectType<TimeoutError>(new TimeoutError);
-
-got(server.url, {
-  hooks: {
-    beforeRequest: [
-      options => {
-        expectType<Object>(options);
-      }
-    ]
-  }
-});
+expectType<GotFunction>(got.extend({}));
+expectType<Got.HTTPError>(new Got.HTTPError());
+expectType<Got.TimeoutError>(new Got.TimeoutError());
