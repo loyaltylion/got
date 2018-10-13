@@ -9,8 +9,9 @@ type GenericFunction = (...arguments: unknown[]) => unknown;
 
 type RequestMethod = "GET" | "PUT" | "HEAD" | "DELETE" | "OPTIONS" | "TRACE";
 
-// type Got
-
+interface OptionsJSON extends Got.Options {
+	json: true;
+}
 export namespace Got {
 	type RetryFunction = (retry: unknown, error: unknown) => number;
 
@@ -23,9 +24,10 @@ export namespace Got {
 		options?: Options
 	) => Emitter & stream.Duplex;
 
-	interface RequestFunction {
-		(url: Url): Promise<string>;
+	interface RequestFunction<T = unknown> {
 		(url: Url, options?: Options): Promise<Response>;
+		<T>(url: Url, options?: Options): Promise<Response<T>>;
+		<T>(url: Url, options: OptionsJSON): Promise<Response<T>>;
 	}
 
 	export interface Hooks {
@@ -291,11 +293,11 @@ export namespace Got {
 		on(event: "request", listener: (req: http.ClientRequest) => void): unknown;
 	} & stream.Duplex;
 
-	export interface Response {
+	export interface Response<ResponseBody = string> {
 		/**
 		 * The result of the request.
 		 */
-		body: string | object;
+		body: ResponseBody;
 		/**
 		 * The request URL or the final URL after redirects.
 		 */
@@ -550,18 +552,19 @@ export namespace Got {
 	}
 }
 
-export interface GotFunction {
+export interface GotFunction<T = unknown> {
 	/**
 	 * Sets `options.stream` to `true`.
 	 */
 	stream: Got.StreamFunction;
-	get: Got.RequestFunction;
-	post: Got.RequestFunction;
-	put: Got.RequestFunction;
-	patch: Got.RequestFunction;
-	head: Got.RequestFunction;
-	delete: Got.RequestFunction;
-	extend(options: Got.Options): GotFunction;
+	get: Got.RequestFunction<T>;
+	post: Got.RequestFunction<T>;
+	put: Got.RequestFunction<T>;
+	patch: Got.RequestFunction<T>;
+	head: Got.RequestFunction<T>;
+	delete: Got.RequestFunction<T>;
+	extend(options?: Got.Options): GotFunction;
+	extend(options: OptionsJSON): GotFunction<T>;
 	(url: Got.Url, options?: Got.Options): Promise<Got.Response>;
 }
 
