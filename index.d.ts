@@ -23,9 +23,8 @@ export namespace Got {
 		options?: Options
 	) => Emitter & stream.Duplex;
 
-	interface RequestFunction {
-		(url: Url): Promise<string>;
-		(url: Url, options?: Options): Promise<Response>;
+	interface RequestFunction<T> {
+		(url: Url, options?: Options): Promise<T>;
 	}
 
 	export interface Hooks {
@@ -88,20 +87,20 @@ export namespace Got {
 		maxRetryAfter?: number;
 	}
 
-	export type Agent =
-		| false
-		| http.Agent
-		| https.Agent
-		| {
-				http?: http.Agent;
-				https?: https.Agent;
-		  };
+	export type Agent = false | http.Agent | https.Agent;
+	// | {
+	// 		http?: http.Agent;
+	// 		https?: https.Agent;
+	//   };
 	/**
 	 * Any of the https.request options.
 	 */
-	export interface Options {
+
+	type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>;
+
+	interface Options extends Omit<http.RequestOptions, "agent" | "timeout"> {
 		/**
-		 * When specfied, `url` will be prepended by baseUrl.
+		 * When specified, `url` will be prepended by baseUrl.
 		 * If you specify an absolute URL, it will skip the baseUrl.
 		 */
 		baseUrl?: string | URL;
@@ -164,12 +163,12 @@ export namespace Got {
 		timeout?: number | Timeout;
 
 		/**
-		 * Represents the retry behaviour. // @todo what should be here
+		 * Represents the retry behavior
 		 */
 		retry?: number | Retry;
 
 		/**
-		 * Defines if rediret responses should be folowed automatically.
+		 * Defines if redirect responses should be followed automatically.
 		 * @default true
 		 */
 		followRedirect?: boolean;
@@ -204,7 +203,7 @@ export namespace Got {
 		 * Determines if a `got.HTTPError` is thrown for error responses (non-2xx status codes).
 		 * @default true
 		 */
-		thorwHttpErrors?: boolean;
+		throwHttpErrors?: boolean;
 
 		/**
 		 * Same as the [`agent` option](https://nodejs.org/api/http.html#http_http_request_url_options_callback)
@@ -221,81 +220,19 @@ export namespace Got {
 		hooks?: Hooks;
 	}
 
-	export class StandardError extends Error {
-		code?: string;
-		host?: string;
-		hostname?: string;
-		method?: string;
-		path?: string;
-		protocol?: string;
-		url?: string;
-		response?: any;
-	}
+	type JsonBodyOptions = Got.Options & { json: true };
 
-	export class CacheError extends StandardError {
-		name: "CacheError";
-	}
-
-	export class RequestError extends StandardError {
-		name: "RequestError";
-	}
-
-	export class ReadError extends StandardError {
-		name: "ReadError";
-	}
-
-	export class ParseError extends StandardError {
-		name: "ParseError";
-		statusCode: number;
-		statusMessage: string;
-	}
-
-	export class HTTPError extends StandardError {
-		name: "HTTPError";
-		statusCode: number;
-		statusMessage: string;
-		headers: http.IncomingHttpHeaders;
-	}
-
-	export class MaxRedirectsError extends StandardError {
-		name: "MaxRedirectsError";
-		statusCode: number;
-		statusMessage: string;
-		redirectUrls: string[];
-	}
-
-	export class UnsupportedProtocolError extends StandardError {
-		name: "UnsupportedProtocolError";
-	}
-
-	export class CancelError extends StandardError {
-		name: "CancelError";
-	}
-
-	export class TimeoutError extends StandardError {
-		name: "TimeoutError";
-	}
-
-	type Error =
-		| CacheError
-		| RequestError
-		| ReadError
-		| ParseError
-		| HTTPError
-		| MaxRedirectsError
-		| UnsupportedProtocolError
-		| TimeoutError
-		| CancelError;
+	type StringBodyOptions = Got.Options & { json: false };
 
 	export type Stream = {
 		on(event: "request", listener: (req: http.ClientRequest) => void): unknown;
 	} & stream.Duplex;
 
-	export interface Response {
+	export interface Response<T> {
 		/**
 		 * The result of the request.
 		 */
-		body: string | object;
+		body: T;
 		/**
 		 * The request URL or the final URL after redirects.
 		 */
@@ -407,8 +344,8 @@ export namespace Got {
 		addListener(
 			event: "error",
 			listener: (
-				error: Got.Error,
-				body?: any,
+				error: GotError,
+				body?: unknown,
 				res?: http.IncomingMessage
 			) => void
 		): this;
@@ -430,8 +367,8 @@ export namespace Got {
 		on(
 			event: "error",
 			listener: (
-				error: Got.Error,
-				body?: any,
+				error: GotError,
+				body?: unknown,
 				res?: http.IncomingMessage
 			) => void
 		): this;
@@ -450,8 +387,8 @@ export namespace Got {
 		once(
 			event: "error",
 			listener: (
-				error: Got.Error,
-				body?: any,
+				error: GotError,
+				body?: unknown,
 				res?: http.IncomingMessage
 			) => void
 		): this;
@@ -476,8 +413,8 @@ export namespace Got {
 		prependListener(
 			event: "error",
 			listener: (
-				error: Got.Error,
-				body?: any,
+				error: GotError,
+				body?: unknown,
 				res?: http.IncomingMessage
 			) => void
 		): this;
@@ -505,8 +442,8 @@ export namespace Got {
 		prependOnceListener(
 			event: "error",
 			listener: (
-				error: Got.Error,
-				body?: any,
+				error: GotError,
+				body?: unknown,
 				res?: http.IncomingMessage
 			) => void
 		): this;
@@ -534,8 +471,8 @@ export namespace Got {
 		removeListener(
 			event: "error",
 			listener: (
-				error: Got.Error,
-				body?: any,
+				error: GotError,
+				body?: unknown,
 				res?: http.IncomingMessage
 			) => void
 		): this;
@@ -550,21 +487,180 @@ export namespace Got {
 	}
 }
 
-export interface GotFunction {
+declare class GotError extends Error {
+	code?: string;
+	host?: string;
+	hostname?: string;
+	method?: string;
+	path?: string;
+	socketPath?: string;
+	protocol?: string;
+	url?: string;
+	response?: unknown;
+}
+
+export class CacheError extends GotError {
+	name: "CacheError";
+}
+
+export class RequestError extends GotError {
+	code: string;
+	name: "RequestError";
+}
+
+export class ReadError extends GotError {
+	name: "ReadError";
+}
+
+export class ParseError extends GotError {
+	name: "ParseError";
+	statusCode: number;
+	statusMessage: string;
+}
+
+export class HTTPError extends GotError {
+	name: "HTTPError";
+	statusCode: number;
+	statusMessage: string;
+	headers: http.IncomingHttpHeaders;
+}
+
+export class MaxRedirectsError extends GotError {
+	name: "MaxRedirectsError";
+	statusCode: number;
+	statusMessage: string;
+	redirectUrls: string[];
+}
+
+export class UnsupportedProtocolError extends GotError {
+	name: "UnsupportedProtocolError";
+}
+
+export class CancelError extends GotError {
+	name: "CancelError";
+}
+
+export class TimeoutError extends GotError {
+	name: "TimeoutError";
+}
+
+interface BaseGotFunction {
+	GotError: typeof GotError;
+	CacheError: typeof CacheError;
+	RequestError: typeof RequestError;
+	ReadError: typeof ReadError;
+	ParseError: typeof ParseError;
+	HTTPError: typeof HTTPError;
+	MaxRedirectsError: typeof MaxRedirectsError;
+	UnsupportedProtocolError: typeof UnsupportedProtocolError;
+	CancelError: typeof CancelError;
+	TimeoutError: typeof TimeoutError;
+	<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.Options & { json: true }
+	): Promise<Got.Response<ResponseBodyType>>;
+	(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
 	/**
 	 * Sets `options.stream` to `true`.
 	 */
 	stream: Got.StreamFunction;
-	get: Got.RequestFunction;
-	post: Got.RequestFunction;
-	put: Got.RequestFunction;
-	patch: Got.RequestFunction;
-	head: Got.RequestFunction;
-	delete: Got.RequestFunction;
-	extend(options: Got.Options): GotFunction;
-	(url: Got.Url, options?: Got.Options): Promise<Got.Response>;
+	get<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.JsonBodyOptions
+	): Promise<Got.Response<ResponseBodyType>>;
+	post<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.JsonBodyOptions
+	): Promise<Got.Response<ResponseBodyType>>;
+	put<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.JsonBodyOptions
+	): Promise<Got.Response<ResponseBodyType>>;
+	patch<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.JsonBodyOptions
+	): Promise<Got.Response<ResponseBodyType>>;
+	head<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.JsonBodyOptions
+	): Promise<Got.Response<ResponseBodyType>>;
+	delete<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.JsonBodyOptions
+	): Promise<Got.Response<ResponseBodyType>>;
+	get(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
+	post(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
+	put(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
+	patch(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
+	head(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
+	delete(url: Got.Url, options?: Got.Options): Promise<Got.Response<string>>;
+	extend(options: Got.JsonBodyOptions): GotFunction.JSONResponseBody;
+	extend(
+		options?: Got.Options
+	): GotFunction.Base | GotFunction.JSONResponseBody;
+}
+interface GotJsonResponseFunction extends BaseGotFunction {
+	(url: Got.Url, options: Got.StringBodyOptions): Promise<Got.Response<string>>;
+	<ResponseBodyType = unknown>(url: Got.Url, options?: Got.Options): Promise<
+		Got.Response<ResponseBodyType>
+	>;
+	get<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.StringBodyOptions
+	): Promise<Got.Response<string>>;
+	post<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.StringBodyOptions
+	): Promise<Got.Response<string>>;
+	put<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.StringBodyOptions
+	): Promise<Got.Response<string>>;
+	patch<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.StringBodyOptions
+	): Promise<Got.Response<string>>;
+	head<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.StringBodyOptions
+	): Promise<Got.Response<string>>;
+	delete<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options: Got.StringBodyOptions
+	): Promise<Got.Response<string>>;
+	get<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options?: Got.Options
+	): Promise<Got.Response<ResponseBodyType>>;
+	post<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options?: Got.Options
+	): Promise<Got.Response<ResponseBodyType>>;
+	put<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options?: Got.Options
+	): Promise<Got.Response<ResponseBodyType>>;
+	patch<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options?: Got.Options
+	): Promise<Got.Response<ResponseBodyType>>;
+	head<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options?: Got.Options
+	): Promise<Got.Response<ResponseBodyType>>;
+	delete<ResponseBodyType = unknown>(
+		url: Got.Url,
+		options?: Got.Options
+	): Promise<Got.Response<ResponseBodyType>>;
+	extend(options: Got.StringBodyOptions): BaseGotFunction;
+	extend(options?: Got.Options): BaseGotFunction | GotJsonResponseFunction;
 }
 
-declare const got: GotFunction;
+export namespace GotFunction {
+	type Base = BaseGotFunction;
+	type JSONResponseBody = GotJsonResponseFunction;
+}
+
+declare const got: BaseGotFunction;
 
 export default got;
