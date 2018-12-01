@@ -526,6 +526,7 @@ export class ParseError extends GotError {
 }
 
 export class HTTPError extends GotError {
+	constructor(response: { statusCode: number, statusMessage: string }, options: any)
 	name: "HTTPError";
 	statusCode: number;
 	statusMessage: string;
