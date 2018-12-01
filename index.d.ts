@@ -494,6 +494,7 @@ export namespace Got {
 }
 
 declare class GotError extends Error {
+	constructor(message: string, error: { code?: number }, opts: any)
 	code: string;
 	host: string;
 	hostname: string;
