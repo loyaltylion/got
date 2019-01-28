@@ -1,7 +1,8 @@
+/* eslint-disable node/no-deprecated-api */
 import {URL, URLSearchParams, parse} from 'url';
 import test from 'ava';
 import pEvent from 'p-event';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 let s;
@@ -36,19 +37,31 @@ test.after('cleanup', async () => {
 });
 
 test('url is required', async t => {
-	const error = await t.throwsAsync(got());
-	t.is(error.message, 'Parameter `url` must be a string or object, not undefined');
+	await t.throwsAsync(
+		got(),
+		{
+			message: 'Parameter `url` must be a string or object, not undefined'
+		}
+	);
 });
 
 test('url should be utf-8 encoded', async t => {
-	const error = await t.throwsAsync(got(`${s.url}/%D2%E0%EB%EB%E8%ED`));
-	t.is(error.message, 'URI malformed');
+	await t.throwsAsync(
+		got(`${s.url}/%D2%E0%EB%EB%E8%ED`),
+		{
+			message: 'URI malformed'
+		}
+	);
 });
 
-test('string url with query is preserved', async t => {
+test('throws an error if the protocol is not specified', async t => {
+	await t.throwsAsync(got('example.com'), TypeError);
+});
+
+test('string url with searchParams is preserved', async t => {
 	const path = '/?test=http://example.com?foo=bar';
-	const response = await got(`${s.url}${path}`);
-	t.is(response.body, path);
+	const {body} = await got(`${s.url}${path}`);
+	t.is(body, path);
 });
 
 test('options are optional', async t => {
@@ -81,11 +94,13 @@ test('requestUrl with url.parse object as first argument', async t => {
 	t.is((await got(parse(`${s.url}/test`))).requestUrl, `${s.url}/test`);
 });
 
-test('overrides querystring from opts', async t => {
-	const response = await got(
+test('overrides searchParams from options', async t => {
+	const {body} = await got(
 		`${s.url}/?drop=this`,
 		{
-			query: {test: 'wow'},
+			searchParams: {
+				test: 'wow'
+			},
 			cache: {
 				get(key) {
 					t.is(key, `cacheable-request:GET:${s.url}/?test=wow`);
@@ -96,45 +111,32 @@ test('overrides querystring from opts', async t => {
 			}
 		}
 	);
-	t.is(response.body, '/?test=wow');
-});
 
-test('escapes query parameter values', async t => {
-	const response = await got(`${s.url}`, {
-		query: {
-			test: 'it’s ok'
-		}
-	});
-	t.is(response.body, '/?test=it%E2%80%99s+ok');
-});
-
-test('the `query` option can be a URLSearchParams', async t => {
-	const query = new URLSearchParams({test: 'wow'});
-	const {body} = await got(s.url, {query});
 	t.is(body, '/?test=wow');
 });
 
-test('should ignore empty query object', async t => {
-	t.is((await got(`${s.url}/test`, {query: {}})).requestUrl, `${s.url}/test`);
+test('escapes searchParams parameter values', async t => {
+	const {body} = await got(`${s.url}`, {
+		searchParams: {
+			test: 'it’s ok'
+		}
+	});
+
+	t.is(body, '/?test=it%E2%80%99s+ok');
 });
 
-test('should throw with auth in url string', async t => {
-	const error = await t.throwsAsync(got('https://test:45d3ps453@account.myservice.com/api/token'));
-	t.is(error.message, 'Basic authentication must be done with the `auth` option');
+test('the `searchParams` option can be a URLSearchParams', async t => {
+	const searchParams = new URLSearchParams({test: 'wow'});
+	const {body} = await got(s.url, {searchParams});
+	t.is(body, '/?test=wow');
 });
 
-test('does not throw with auth in url object', async t => {
-	await t.notThrowsAsync(got({
-		auth: 'foo:bar',
-		hostname: s.host,
-		port: s.port,
-		protocol: 'http:',
-		path: '/test'
-	}));
+test('should ignore empty searchParams object', async t => {
+	t.is((await got(`${s.url}/test`, {searchParams: {}})).requestUrl, `${s.url}/test`);
 });
 
-test('should throw when body is set to object', async t => {
-	await t.throwsAsync(got(`${s.url}/`, {body: {}}), TypeError);
+test('should throw on invalid type of body', async t => {
+	await t.throwsAsync(got(`${s.url}/`, {body: false}), TypeError);
 });
 
 test('WHATWG URL support', async t => {
@@ -144,11 +146,6 @@ test('WHATWG URL support', async t => {
 
 test('should return streams when using stream option', async t => {
 	const data = await pEvent(got(`${s.url}/stream`, {stream: true}), 'data');
-	t.is(data.toString(), 'ok');
-});
-
-test('should ignore JSON option when using stream option', async t => {
-	const data = await pEvent(got(`${s.url}/stream`, {stream: true, json: true}), 'data');
 	t.is(data.toString(), 'ok');
 });
 
@@ -224,4 +221,20 @@ test('throws when trying to modify baseUrl after options got normalized', async 
 	});
 
 	await t.throwsAsync(instanceA('/'), 'Failed to set baseUrl. Options are normalized already.');
+});
+
+test('throws if the searchParams key is invalid', async t => {
+	await t.throwsAsync(() => got(s.url, {
+		searchParams: {
+			[[]]: []
+		}
+	}), TypeError);
+});
+
+test('throws if the searchParams value is invalid', async t => {
+	await t.throwsAsync(() => got(s.url, {
+		searchParams: {
+			foo: []
+		}
+	}), TypeError);
 });

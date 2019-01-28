@@ -2,7 +2,7 @@ import net from 'net';
 import test from 'ava';
 import tough from 'tough-cookie';
 import delay from 'delay';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 let s;
@@ -108,15 +108,16 @@ test('no unhandled errors', async t => {
 		connection.end('blah');
 	}).listen(0);
 
-	const error = 'snap!';
+	const message = 'snap!';
 
-	const opts = {
+	const options = {
 		cookieJar: {
 			setCookie: () => {},
-			getCookieString: (_, __, cb) => cb(new Error(error))
+			getCookieString: (_, __, cb) => cb(new Error(message))
 		}
 	};
-	await t.throwsAsync(got(`http://127.0.0.1:${server.address().port}`, opts), error);
+
+	await t.throwsAsync(got(`http://127.0.0.1:${server.address().port}`, options), {message});
 	await delay(500);
 	t.pass();
 

@@ -1,6 +1,6 @@
 import is from '@sindresorhus/is';
 import test from 'ava';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 let s;
@@ -57,11 +57,11 @@ test('error with code', async t => {
 });
 
 test('status code 304 doesn\'t throw', async t => {
-	const p = got(`${s.url}/304`);
-	await t.notThrowsAsync(p);
-	const response = await p;
-	t.is(response.statusCode, 304);
-	t.is(response.body, '');
+	const promise = got(`${s.url}/304`);
+	await t.notThrowsAsync(promise);
+	const {statusCode, body} = await promise;
+	t.is(statusCode, 304);
+	t.is(body, '');
 });
 
 test('doesn\'t throw on throwHttpErrors === false', async t => {
@@ -69,7 +69,7 @@ test('doesn\'t throw on throwHttpErrors === false', async t => {
 });
 
 test('invalid protocol throws', async t => {
-	const error = await t.throwsAsync(got('c:/nope.com', {json: true}));
+	const error = await t.throwsAsync(got('c:/nope.com').json());
 	t.is(error.constructor, got.UnsupportedProtocolError);
 });
 
@@ -78,9 +78,9 @@ test('buffer on encoding === null', async t => {
 	t.true(is.buffer(data));
 });
 
-test('query option', async t => {
-	t.is((await got(s.url, {query: {recent: true}})).body, 'recent');
-	t.is((await got(s.url, {query: 'recent=true'})).body, 'recent');
+test('searchParams option', async t => {
+	t.is((await got(s.url, {searchParams: {recent: true}})).body, 'recent');
+	t.is((await got(s.url, {searchParams: 'recent=true'})).body, 'recent');
 });
 
 test('requestUrl response when sending url as param', async t => {
@@ -90,4 +90,13 @@ test('requestUrl response when sending url as param', async t => {
 
 test('response contains url', async t => {
 	t.is((await got(s.url)).url, `${s.url}/`);
+});
+
+test('response contains got options', async t => {
+	const options = {
+		url: s.url,
+		auth: 'foo:bar'
+	};
+
+	t.is((await got(options)).request.gotOptions.auth, options.auth);
 });

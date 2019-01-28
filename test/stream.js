@@ -4,7 +4,7 @@ import getStream from 'get-stream';
 import pEvent from 'p-event';
 import delay from 'delay';
 import is from '@sindresorhus/is';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 let s;
@@ -43,8 +43,8 @@ test.after('cleanup', async () => {
 	await s.close();
 });
 
-test('options.json is ignored', t => {
-	t.notThrows(() => got.stream(s.url, {json: true}));
+test('options.responseType is ignored', t => {
+	t.notThrows(() => got.stream(s.url, {responseType: 'json'}));
 });
 
 test('returns readable stream', async t => {
@@ -72,13 +72,13 @@ test('have request event', async t => {
 });
 
 test('have redirect event', async t => {
-	const response = await pEvent(got.stream(`${s.url}/redirect`), 'redirect');
-	t.is(response.headers.location, s.url);
+	const {headers} = await pEvent(got.stream(`${s.url}/redirect`), 'redirect');
+	t.is(headers.location, s.url);
 });
 
 test('have response event', async t => {
-	const response = await pEvent(got.stream(s.url), 'response');
-	t.is(response.statusCode, 200);
+	const {statusCode} = await pEvent(got.stream(s.url), 'response');
+	t.is(statusCode, 200);
 });
 
 test('have error event', async t => {
@@ -87,13 +87,13 @@ test('have error event', async t => {
 });
 
 test('have error event #2', async t => {
-	const stream = got.stream('.com', {retry: 0});
+	const stream = got.stream('http://doesntexist', {retry: 0});
 	await t.throwsAsync(pEvent(stream, 'response'), /getaddrinfo ENOTFOUND/);
 });
 
 test('have response event on throwHttpErrors === false', async t => {
-	const response = await pEvent(got.stream(`${s.url}/error`, {throwHttpErrors: false}), 'response');
-	t.is(response.statusCode, 404);
+	const {statusCode} = await pEvent(got.stream(`${s.url}/error`, {throwHttpErrors: false}), 'response');
+	t.is(statusCode, 404);
 });
 
 test('accepts option.body as Stream', async t => {
@@ -103,8 +103,8 @@ test('accepts option.body as Stream', async t => {
 });
 
 test('redirect response contains old url', async t => {
-	const response = await pEvent(got.stream(`${s.url}/redirect`), 'response');
-	t.is(response.requestUrl, `${s.url}/redirect`);
+	const {requestUrl} = await pEvent(got.stream(`${s.url}/redirect`), 'response');
+	t.is(requestUrl, `${s.url}/redirect`);
 });
 
 test('check for pipe method', t => {
@@ -184,10 +184,9 @@ test('proxies content-encoding header when options.decompress is false', async t
 
 test('destroying got.stream() cancels the request', async t => {
 	const stream = got.stream(s.url);
-
-	const req = await pEvent(stream, 'request');
+	const request = await pEvent(stream, 'request');
 	stream.destroy();
-	t.truthy(req.aborted);
+	t.truthy(request.aborted);
 });
 
 test('piping to got.stream.put()', async t => {

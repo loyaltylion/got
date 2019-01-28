@@ -1,6 +1,7 @@
+/* eslint-disable node/no-deprecated-api */
 import url from 'url';
 import test from 'ava';
-import urlToOptions from '../source/utils/url-to-options';
+import urlToOptions from '../dist/utils/url-to-options';
 
 test('converts node legacy URL to options', t => {
 	const exampleURL = 'https://user:password@github.com:443/say?hello=world#bang';
@@ -8,6 +9,7 @@ test('converts node legacy URL to options', t => {
 	const options = urlToOptions(parsedURL);
 	const expected = {
 		hash: '#bang',
+		host: 'github.com:443',
 		hostname: 'github.com',
 		href: exampleURL,
 		path: '/say?hello=world',
@@ -28,6 +30,7 @@ test('converts URL to options', t => {
 	const expected = {
 		auth: 'user:password',
 		hash: '#bang',
+		host: 'github.com',
 		hostname: 'github.com',
 		href: 'https://user:password@github.com/say?hello=world#bang',
 		path: '/say?hello=world',
@@ -46,6 +49,7 @@ test('converts IPv6 URL to options', t => {
 	const options = urlToOptions(parsedURL);
 	const expected = {
 		hash: '',
+		host: '[2001:cdba::3257:9652]',
 		hostname: '2001:cdba::3257:9652',
 		href: 'https://[2001:cdba::3257:9652]/',
 		path: '/',
@@ -63,6 +67,7 @@ test('only adds port to options for URLs with ports', t => {
 	const options = urlToOptions(parsedURL);
 	const expected = {
 		hash: '',
+		host: 'github.com',
 		hostname: 'github.com',
 		href: 'https://github.com/',
 		path: '/',
@@ -84,6 +89,7 @@ test('does not concat null search to path', t => {
 	const options = urlToOptions(parsedURL);
 	const expected = {
 		hash: null,
+		host: 'github.com',
 		hostname: 'github.com',
 		href: 'https://github.com/',
 		path: '/',
@@ -104,6 +110,7 @@ test('does not add null port to options', t => {
 	const options = urlToOptions(parsedURL);
 	const expected = {
 		hash: null,
+		host: 'github.com',
 		hostname: 'github.com',
 		href: 'https://github.com/',
 		path: '/',

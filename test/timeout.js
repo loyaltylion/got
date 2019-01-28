@@ -5,7 +5,7 @@ import getStream from 'get-stream';
 import test from 'ava';
 import pEvent from 'p-event';
 import delay from 'delay';
-import got from '../source';
+import got from '../dist';
 import {createServer, createSSLServer} from './helpers/server';
 
 let s;
@@ -18,6 +18,7 @@ const slowDataStream = () => {
 		if (count++ < 10) {
 			return slowStream.push('data\n'.repeat(100));
 		}
+
 		clearInterval(interval);
 		slowStream.push(null);
 	}, 100);
@@ -457,4 +458,37 @@ test('no more timeouts after an error', async t => {
 
 	// Wait a bit more to check if there are any unhandled errors
 	await delay(10);
+});
+
+test('socket timeout is canceled on error', async t => {
+	const message = 'oh, snap!';
+
+	const promise = got(s.url, {
+		timeout: {socket: requestTimeout},
+		retry: 0
+	}).on('request', request => {
+		request.emit('error', new Error(message));
+	});
+
+	await t.throwsAsync(promise, {message});
+	// Wait a bit more to check if there are any unhandled errors
+	await delay(10);
+});
+
+test('no memory leak when using socket timeout and keepalive agent', async t => {
+	const promise = got(s.url, {
+		agent: keepAliveAgent,
+		timeout: {socket: requestDelay * 2}
+	});
+
+	let socket;
+	promise.on('request', request => {
+		request.on('socket', () => {
+			socket = request.socket;
+		});
+	});
+
+	await promise;
+
+	t.is(socket.listenerCount('timeout'), 0);
 });

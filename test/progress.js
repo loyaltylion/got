@@ -1,4 +1,4 @@
-import util from 'util';
+import {promisify} from 'util';
 import fs from 'fs';
 import SlowStream from 'slow-stream';
 import toReadableStream from 'to-readable-stream';
@@ -7,10 +7,10 @@ import FormData from 'form-data';
 import tempfile from 'tempfile';
 import is from '@sindresorhus/is';
 import test from 'ava';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
-const checkEvents = (t, events, bodySize = null) => {
+const checkEvents = (t, events, bodySize = undefined) => {
 	t.true(events.length >= 2);
 
 	const hasBodySize = is.number(bodySize);
@@ -71,10 +71,10 @@ test.after('cleanup', async () => {
 test('download progress', async t => {
 	const events = [];
 
-	const response = await got(`${s.url}/download`, {encoding: null})
+	const {body} = await got(`${s.url}/download`, {encoding: null})
 		.on('downloadProgress', event => events.push(event));
 
-	checkEvents(t, events, response.body.length);
+	checkEvents(t, events, body.length);
 });
 
 test('download progress - missing total size', async t => {
@@ -125,7 +125,7 @@ test('upload progress - form data', async t => {
 	body.append('key', 'value');
 	body.append('file', file);
 
-	const size = await util.promisify(body.getLength.bind(body))();
+	const size = await promisify(body.getLength.bind(body))();
 
 	await got.post(`${s.url}/upload`, {body})
 		.on('uploadProgress', event => events.push(event));

@@ -54,7 +54,7 @@ const settings = {
 		return next(options);
 	},
 	options: got.mergeOptions(got.defaults.options, {
-		json: true
+		responseType: 'json'
 	})
 };
 
@@ -82,12 +82,24 @@ const defaults = {
 				502,
 				503,
 				504
+			],
+			errorCodes: [
+				'ETIMEDOUT',
+				'ECONNRESET',
+				'EADDRINUSE',
+				'ECONNREFUSED',
+				'EPIPE',
+				'ENOTFOUND',
+				'ENETUNREACH',
+				'EAI_AGAIN'
 			]
 		},
 		headers: {
 			'user-agent': `${pkg.name}/${pkg.version} (https://github.com/sindresorhus/got)`
 		},
 		hooks: {
+			beforeError: [],
+			init: [],
 			beforeRequest: [],
 			beforeRedirect: [],
 			beforeRetry: [],
@@ -98,9 +110,10 @@ const defaults = {
 		followRedirect: true,
 		stream: false,
 		form: false,
-		json: false,
 		cache: false,
-		useElectronNet: false
+		useElectronNet: false,
+		responseType: 'text',
+		resolveBodyOnly: 'false'
 	},
 	mutableDefaults: false
 };
@@ -240,7 +253,7 @@ const merged = got.mergeInstances(controlRedirects, limitDownloadUpload, httpbin
 	await merged('/');
 	/* HTTP Request =>
 	 * GET / HTTP/1.1
-	 * accept-encoding: gzip, deflate
+	 * accept-encoding: gzip, deflate, br
 	 * sign: F9E66E179B6747AE54108F82F8ADE8B3C25D76FD30AFDE6C395822C530196169
 	 * Host: httpbin.org
 	 * Connection: close

@@ -13,13 +13,18 @@
 
 > Simplified HTTP requests
 
-[![Build Status: Linux](https://travis-ci.org/sindresorhus/got.svg?branch=master)](https://travis-ci.org/sindresorhus/got) [![Coverage Status](https://coveralls.io/repos/github/sindresorhus/got/badge.svg?branch=master)](https://coveralls.io/github/sindresorhus/got?branch=master) [![Downloads](https://img.shields.io/npm/dm/got.svg)](https://npmjs.com/got) [![Install size](https://packagephobia.now.sh/badge?p=got)](https://packagephobia.now.sh/result?p=got)
+[![Build Status: Linux](https://travis-ci.org/sindresorhus/got.svg?branch=master)](https://travis-ci.org/sindresorhus/got)
+[![Coverage Status](https://coveralls.io/repos/github/sindresorhus/got/badge.svg?branch=master)](https://coveralls.io/github/sindresorhus/got?branch=master)
+[![Downloads](https://img.shields.io/npm/dm/got.svg)](https://npmjs.com/got)
+[![Install size](https://packagephobia.now.sh/badge?p=got)](https://packagephobia.now.sh/result?p=got)
 
 Got is a human-friendly and powerful HTTP request library.
 
 It was created because the popular [`request`](https://github.com/request/request) package is bloated: [![Install size](https://packagephobia.now.sh/badge?p=request)](https://packagephobia.now.sh/result?p=request)
 
 Got is for Node.js. For browsers, we recommend [Ky](https://github.com/sindresorhus/ky).
+
+**This readme reflects the next major version that is currently in development. You probably want [the v9 readme](https://www.npmjs.com/package/got).**
 
 
 ## Highlights
@@ -30,20 +35,21 @@ Got is for Node.js. For browsers, we recommend [Ky](https://github.com/sindresor
 - [Follows redirects](#followredirect)
 - [Retries on failure](#retry)
 - [Progress events](#onuploadprogress-progress)
-- [Handles gzip/deflate](#decompress)
+- [Handles gzip/deflate/brotli](#decompress)
 - [Timeout handling](#timeout)
 - [Errors with metadata](#errors)
-- [JSON mode](#json)
+- [JSON mode](#json-mode)
 - [WHATWG URL support](#url)
-- [Hooks](https://github.com/sindresorhus/got#hooks)
+- [Hooks](#hooks)
 - [Instances with custom defaults](#instances)
 - [Composable](advanced-creation.md#merging-instances)
 - [Electron support](#useelectronnet)
 - [Used by ~2000 packages and ~500K repos](https://github.com/sindresorhus/got/network/dependents)
 - Actively maintained
 
-[See how Got compares to other HTTP libraries](#comparison)
+[Moving from Request?](migration-guides.md)
 
+[See how Got compares to other HTTP libraries](#comparison)
 
 ## Install
 
@@ -63,7 +69,7 @@ const got = require('got');
 
 (async () => {
 	try {
-		const response = await got('sindresorhus.com');
+		const response = await got('https://sindresorhus.com');
 		console.log(response.body);
 		//=> '<!doctype html> ...'
 	} catch (error) {
@@ -79,10 +85,10 @@ const got = require('got');
 const fs = require('fs');
 const got = require('got');
 
-got.stream('sindresorhus.com').pipe(fs.createWriteStream('index.html'));
+got.stream('https://sindresorhus.com').pipe(fs.createWriteStream('index.html'));
 
 // For POST, PUT, and PATCH methods `got.stream` returns a `stream.Writable`
-fs.createReadStream('index.html').pipe(got.stream.post('sindresorhus.com'));
+fs.createReadStream('index.html').pipe(got.stream.post('https://sindresorhus.com'));
 ```
 
 
@@ -102,7 +108,7 @@ The URL to request, as a string, a [`https.request` options object](https://node
 
 Properties from `options` will override properties in the parsed `url`.
 
-If no protocol is specified, it will default to `https`.
+If no protocol is specified, it will throw a `TypeError`.
 
 ##### options
 
@@ -154,21 +160,51 @@ Returns a `Stream` instead of a `Promise`. This is equivalent to calling `got.st
 
 Type: `string` `Buffer` `stream.Readable` [`form-data` instance](https://github.com/form-data/form-data)
 
-*If you provide this option, `got.stream()` will be read-only.*
+**Note:** The `body` option cannot be used with the `json` or `form` option.
 
-The body that will be sent with a `POST` request.
+**Note:** If you provide this option, `got.stream()` will be read-only.
 
 If present in `options` and `options.method` is not set, `options.method` will be set to `POST`.
 
 The `content-length` header will be automatically set if `body` is a `string` / `Buffer` / `fs.createReadStream` instance / [`form-data` instance](https://github.com/form-data/form-data), and `content-length` and `transfer-encoding` are not manually set in `options.headers`.
 
+###### json
+
+Type: `Object` `Array` `number` `string` `boolean` `null`
+
+**Note:** If you provide this option, `got.stream()` will be read-only.
+
+JSON body. The `Content-Type` header will be set to `application/json` if it's not defined.
+
+###### responseType
+
+Type: `string`<br>
+Default: `text`
+
+**Note:** When using streams, this option is ignored.
+
+Parsing method used to retrieve the body from the response. Can be `text`, `json` or `buffer`. The promise has `.json()` and `.buffer()` and `.text()` functions which set this option automatically.
+
+Example:
+
+```js
+const {body} = await got(url).json();
+```
+
+###### resolveBodyOnly
+
+Type: `string`<br>
+Default: `false`
+
+When set to `true` the promise will return the [Response body](#body-1) instead of the [Response](#response) object.
+
 ###### cookieJar
 
 Type: [`tough.CookieJar` instance](https://github.com/salesforce/tough-cookie#cookiejar)
 
-Cookie support. You don't have to care about parsing or how to store them. [Example.](#cookies)
+**Note:** If you provide this option, `options.headers.cookie` will be overridden.
 
-**Note:** `options.headers.cookie` will be overridden.
+Cookie support. You don't have to care about parsing or how to store them. [Example.](#cookies)
 
 ###### encoding
 
@@ -179,31 +215,19 @@ Default: `'utf8'`
 
 ###### form
 
-Type: `boolean`<br>
-Default: `false`
+Type: `Object`
 
-*If you provide this option, `got.stream()` will be read-only.*
+**Note:** If you provide this option, `got.stream()` will be read-only.
+
+The form body is converted to query string using [`(new URLSearchParams(object)).toString()`](https://nodejs.org/api/url.html#url_constructor_new_urlsearchparams_obj).
 
 If set to `true` and `Content-Type` header is not set, it will be set to `application/x-www-form-urlencoded`.
 
-`body` must be a plain object. It will be converted to a query string using [`(new URLSearchParams(object)).toString()`](https://nodejs.org/api/url.html#url_constructor_new_urlsearchparams_obj).
-
-###### json
-
-Type: `boolean`<br>
-Default: `false`
-
-*If you use `got.stream()`, this option will be ignored.*
-
-If set to `true` and `Content-Type` header is not set, it will be set to `application/json`.
-
-Parse response body with `JSON.parse` and set `accept` header to `application/json`. If used in conjunction with the `form` option, the `body` will the stringified as querystring and the response parsed as JSON.
-
-`body` must be a plain object or array and will be stringified.
-
-###### query
+###### searchParams
 
 Type: `string` `Object<string, string|number>` [`URLSearchParams`](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+
+**Note**: The `query` option was renamed to `searchParams` in Got v10. The `query` option name is still functional, but is being deprecated and will be completely removed in Got v11.
 
 Query string that will be added to the request URL. This will override the query string in `url`.
 
@@ -212,11 +236,11 @@ If you need to pass in an array, you can do it using a `URLSearchParams` instanc
 ```js
 const got = require('got');
 
-const query = new URLSearchParams([['key', 'a'], ['key', 'b']]);
+const searchParams = new URLSearchParams([['key', 'a'], ['key', 'b']]);
 
-got('https://example.com', {query});
+got('https://example.com', {searchParams});
 
-console.log(query.toString());
+console.log(searchParams.toString());
 //=> 'key=a&key=b'
 ```
 
@@ -226,11 +250,11 @@ And if you need a different array format, you could use the [`query-string`](htt
 const got = require('got');
 const queryString = require('query-string');
 
-const query = queryString.stringify({key: ['a', 'b']}, {arrayFormat: 'bracket'});
+const searchParams = queryString.stringify({key: ['a', 'b']}, {arrayFormat: 'bracket'});
 
-got('https://example.com', {query});
+got('https://example.com', {searchParams});
 
-console.log(query);
+console.log(searchParams);
 //=> 'key[]=a&key[]=b'
 ```
 
@@ -258,8 +282,9 @@ Default:
 - methods: `GET` `PUT` `HEAD` `DELETE` `OPTIONS` `TRACE`
 - statusCodes: [`408`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/408) [`413`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/413) [`429`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429) [`500`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500) [`502`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502) [`503`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503) [`504`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/504)
 - maxRetryAfter: `undefined`
+- errorCodes: `ETIMEDOUT` `ECONNRESET` `EADDRINUSE` `ECONNREFUSED` `EPIPE` `ENOTFOUND` `ENETUNREACH` `EAI_AGAIN`
 
-An object representing `retries`, `methods`, `statusCodes` and `maxRetryAfter` fields for the time until retry, allowed methods, allowed status codes and maximum [`Retry-After`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After) time.
+An object representing `retries`, `methods`, `statusCodes`, `maxRetryAfter` and `errorCodes` fields for the time until retry, allowed methods, allowed status codes, maximum [`Retry-After`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After) time and allowed error codes.
 
 If `maxRetryAfter` is set to `undefined`, it will use `options.timeout`.<br>
 If [`Retry-After`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After) header is greater than `maxRetryAfter`, it will cancel the request.
@@ -268,7 +293,7 @@ Delays between retries counts with function `1000 * Math.pow(2, retry) + Math.ra
 
 The `retries` property can be a `number` or a `function` with `retry` and `error` arguments. The function must return a delay in milliseconds (`0` return value cancels retry).
 
-**Note:** It retries only on the specified methods, status codes, and on these network errors:
+By default, it retries *only* on the specified methods, status codes, and on these network errors:
 - `ETIMEDOUT`: One of the [timeout](#timeout) limits were reached.
 - `ECONNRESET`: Connection was forcibly closed by a peer.
 - `EADDRINUSE`: Could not bind to any free port.
@@ -292,7 +317,9 @@ Note that if a `303` is sent by the server in response to any request type (`POS
 Type: `boolean`<br>
 Default: `true`
 
-Decompress the response automatically. This will set the `accept-encoding` header to `gzip, deflate` unless you set it yourself.
+Decompress the response automatically. This will set the `accept-encoding` header to `gzip, deflate, br` on Node.js 11.7.0+ or `gzip, deflate` for older Node.js versions, unless you set it yourself.
+
+Brotli (`br`) support requires Node.js 11.7.0 or later.
 
 If this is disabled, a compressed response is returned as a `Buffer`. This may be useful if you want to handle decompression yourself or stream the raw compressed data.
 
@@ -337,7 +364,7 @@ const got = require('got');
 const HttpAgent = require('agentkeepalive');
 const {HttpsAgent} = HttpAgent;
 
-got('sindresorhus.com', {
+got('https://sindresorhus.com', {
 	agent: {
 		http: new HttpAgent(),
 		https: new HttpsAgent()
@@ -351,16 +378,25 @@ Type: `Object<string, Function[]>`
 
 Hooks allow modifications during the request lifecycle. Hook functions may be async and are run serially.
 
+###### hooks.init
+
+Type: `Function[]`<br>
+Default: `[]`
+
+Called with plain [request options](#options), right before their normalization. This is especially useful in conjunction with [`got.extend()`](#instances) and [`got.create()`](advanced-creation.md) when the input needs custom handling.
+
+See the [Request migration guide](migration-guides.md#breaking-changes) for an example.
+
+**Note:** This hook must be synchronous!
+
 ###### hooks.beforeRequest
 
 Type: `Function[]`<br>
 Default: `[]`
 
-Called with [normalized](source/normalize-arguments.js) [request options](#options). Got will make no further changes to the request before it is sent. This is especially useful in conjunction with [`got.extend()`](#instances) and [`got.create()`](advanced-creation.md) when you want to create an API client that, for example, uses HMAC-signing.
+Called with [normalized](source/normalize-arguments.js) [request options](#options). Got will make no further changes to the request before it is sent (except the body serialization). This is especially useful in conjunction with [`got.extend()`](#instances) and [`got.create()`](advanced-creation.md) when you want to create an API client that, for example, uses HMAC-signing.
 
 See the [AWS section](#aws) for an example.
-
-**Note**: If you modify the `body` you will need to modify the `content-length` header too, because it has already been computed and assigned.
 
 ###### hooks.beforeRedirect
 
@@ -372,7 +408,7 @@ Called with [normalized](source/normalize-arguments.js) [request options](#optio
 ```js
 const got = require('got');
 
-got('example.com', {
+got('https://example.com', {
 	hooks: {
 		beforeRedirect: [
 			options => {
@@ -395,7 +431,7 @@ Called with [normalized](source/normalize-arguments.js) [request options](#optio
 ```js
 const got = require('got');
 
-got('example.com', {
+got('https://example.com', {
 	hooks: {
 		beforeRetry: [
 			(options, error, retryCount) => {
@@ -447,13 +483,50 @@ const instance = got.extend({
 });
 ```
 
+###### hooks.beforeError
+
+Type: `Function[]`<br>
+Default: `[]`
+
+Called with an `Error` instance. The error is passed to the hook right before it's thrown. This is especially useful when you want to have more detailed errors.
+
+**Note:** Errors thrown while normalizing input options are thrown directly and not part of this hook.
+
+```js
+const got = require('got');
+
+got('https://api.github.com/some-endpoint', {
+	hooks: {
+		onError: [
+			error => {
+				const {response} = error;
+ 				if (response && response.body) {
+					error.name = 'GitHubError';
+					error.message = `${response.body.message} (${error.statusCode})`;
+				}
+
+ 				return error;
+			}
+		]
+	}
+});
+```
+
 #### Response
 
 The response object will typically be a [Node.js HTTP response stream](https://nodejs.org/api/http.html#http_class_http_incomingmessage), however, if returned from the cache it will be a [response-like object](https://github.com/lukechilds/responselike) which behaves in the same way.
 
+##### request
+
+Type: `Object`
+
+**Note:** This is not a [http.ClientRequest](https://nodejs.org/api/http.html#http_class_http_clientrequest).
+
+- `gotOptions` - The options that were set on this request.
+
 ##### body
 
-Type: `string` `Object` *(depending on `options.json`)*
+Type: `string` `Object` `Buffer` *(depending on `options.responseType`)*
 
 The result of the request.
 
@@ -492,7 +565,7 @@ The object contains the following properties:
 	- `download` - `timings.end - timings.response`
 	- `total` - `timings.end - timings.start` or `timings.error - timings.start`
 
-**Note**: The time is a `number` representing the milliseconds elapsed since the UNIX epoch.
+**Note:** The time is a `number` representing the milliseconds elapsed since the UNIX epoch.
 
 ##### fromCache
 
@@ -514,7 +587,7 @@ The number of times the request was retried.
 
 #### Streams
 
-**Note**: Progress events, redirect events and request/response events can also be used with promises.
+**Note:** Progress events, redirect events and request/response events can also be used with promises.
 
 #### got.stream(url, [options])
 
@@ -526,10 +599,10 @@ Returns a [duplex stream](https://nodejs.org/api/stream.html#stream_class_stream
 
 `request` event to get the request object of the request.
 
-**Tip**: You can use `request` event to abort request:
+**Tip:** You can use `request` event to abort request:
 
 ```js
-got.stream('github.com')
+got.stream('https://github.com')
 	.on('request', request => setTimeout(() => request.abort(), 50));
 ```
 
@@ -558,7 +631,7 @@ If it's not possible to retrieve the body size (can happen when streaming), `tot
 
 ```js
 (async () => {
-	const response = await got('sindresorhus.com')
+	const response = await got('https://sindresorhus.com')
 		.on('downloadProgress', progress => {
 			// Report download progress
 		})
@@ -614,11 +687,11 @@ client.get('/demo');
 			'x-foo': 'bar'
 		}
 	});
-	const {headers} = (await client.get('/headers', {json: true})).body;
+	const {headers} = (await client.get('/headers').json()).body;
 	//=> headers['x-foo'] === 'bar'
 
 	const jsonClient = client.extend({
-		json: true,
+		responseType: 'json',
 		headers: {
 			'x-baz': 'qux'
 		}
@@ -629,7 +702,7 @@ client.get('/demo');
 })();
 ```
 
-*Need more control over the behavior of Got? Check out the [`got.create()`](advanced-creation.md).*
+**Tip:** Need more control over the behavior of Got? Check out the [`got.create()`](advanced-creation.md).
 
 #### got.mergeOptions(parentOptions, newOptions)
 
@@ -661,7 +734,7 @@ The default Got options.
 
 ## Errors
 
-Each error contains (if available) `body`, `statusCode`, `statusMessage`, `host`, `hostname`, `method`, `path`, `protocol` and `url` properties to make debugging easier.
+Each error contains `host`, `hostname`, `method`, `path`, `protocol`, `url` and `gotOptions` properties to make debugging easier.
 
 In Promise mode, the `response` is attached to the error.
 
@@ -679,15 +752,15 @@ When reading from response stream fails.
 
 #### got.ParseError
 
-When `json` option is enabled, server response code is 2xx, and `JSON.parse` fails.
+When server response code is 2xx, and parsing body fails. Includes `body`, `statusCode` and `statusMessage` properties.
 
 #### got.HTTPError
 
-When the server response code is not 2xx. Includes `statusCode`, `statusMessage`, and `redirectUrls` properties.
+When the server response code is not 2xx. Includes `body`, `statusCode`, `statusMessage`, and `redirectUrls` properties.
 
 #### got.MaxRedirectsError
 
-When the server redirects you more than ten times. Includes a `redirectUrls` property, which is an array of the URLs Got was redirected to before giving up.
+When the server redirects you more than ten times. Includes a `statusCode`, `statusMessage`, and `redirectUrls` property which is an array of the URLs Got was redirected to before giving up.
 
 #### got.UnsupportedProtocolError
 
@@ -699,7 +772,7 @@ When the request is aborted with `.cancel()`.
 
 #### got.TimeoutError
 
-When the request is aborted due to a [timeout](#timeout)
+When the request is aborted due to a [timeout](#timeout). Includes an `event` and `timings` property.
 
 ## Aborting the request
 
@@ -742,11 +815,11 @@ const got = require('got');
 const map = new Map();
 
 (async () => {
-		let response = await got('sindresorhus.com', {cache: map});
+		let response = await got('https://sindresorhus.com', {cache: map});
 		console.log(response.fromCache);
 		//=> false
 
-		response = await got('sindresorhus.com', {cache: map});
+		response = await got('https://sindresorhus.com', {cache: map});
 		console.log(response.fromCache);
 		//=> true
 })();
@@ -764,7 +837,7 @@ const KeyvRedis = require('@keyv/redis');
 
 const redis = new KeyvRedis('redis://user:pass@localhost:6379');
 
-got('sindresorhus.com', {cache: redis});
+got('https://sindresorhus.com', {cache: redis});
 ```
 
 Got supports anything that follows the Map API, so it's easy to write your own storage adapter or use a third-party solution.
@@ -779,7 +852,7 @@ const storageAdapter = require('./my-storage-adapter');
 const QuickLRU = require('quick-lru');
 const storageAdapter = new QuickLRU({maxSize: 1000});
 
-got('sindresorhus.com', {cache: storageAdapter});
+got('https://sindresorhus.com', {cache: storageAdapter});
 ```
 
 View the [Keyv docs](https://github.com/lukechilds/keyv) for more information on how to use storage adapters.
@@ -793,7 +866,7 @@ You can use the [`tunnel`](https://github.com/koichik/node-tunnel) package with 
 const got = require('got');
 const tunnel = require('tunnel');
 
-got('sindresorhus.com', {
+got('https://sindresorhus.com', {
 	agent: tunnel.httpOverHttp({
 		proxy: {
 			host: 'localhost'
@@ -816,7 +889,7 @@ const {CookieJar} = require('tough-cookie');
 const cookieJar = new CookieJar();
 cookieJar.setCookie('foo=bar', 'https://www.google.com');
 
-got('google.com', {cookieJar});
+got('https://google.com', {cookieJar});
 ```
 
 
@@ -832,7 +905,7 @@ const form = new FormData();
 
 form.append('my_file', fs.createReadStream('/foo/bar.jpg'));
 
-got.post('google.com', {
+got.post('https://example.com', {
 	body: form
 });
 ```
@@ -865,7 +938,7 @@ const url = 'https://api.twitter.com/1.1/statuses/home_timeline.json';
 
 got(url, {
 	headers: oauth.toHeader(oauth.authorize({url, method: 'GET'}, token)),
-	json: true
+	responseType: 'json'
 });
 ```
 
@@ -929,7 +1002,7 @@ nock('https://sindresorhus.com')
 	.reply(200, 'Hello world!');
 
 (async () => {
-	const response = await got('sindresorhus.com');
+	const response = await got('https://sindresorhus.com');
 	console.log(response.body);
 	//=> 'Hello world!'
 })();
@@ -956,6 +1029,43 @@ const createTestServer = require('create-test-server');
 
 ## Tips
 
+### JSON mode
+
+By default, if you pass an object to the `body` option it will be stringified using `JSON.stringify`. Example:
+
+```js
+const got = require('got');
+
+(async () => {
+	const response = await got('https://httpbin.org/anything', {
+		body: {
+			hello: 'world'
+		},
+		responseType: 'json'
+	});
+
+	console.log(response.body.data);
+	//=> '{"hello":"world"}'
+})();
+```
+
+To receive a JSON body you can either set `responseType` option to `json` or use `promise.json()`. Example:
+
+```js
+const got = require('got');
+
+(async () => {
+	const {body} = await got('https://httpbin.org/anything', {
+		body: {
+			hello: 'world'
+		}
+	}).json();
+
+	console.log(body);
+	//=> {...}
+})();
+```
+
 ### User Agent
 
 It's a good idea to set the `'user-agent'` header so the provider can more easily see how their resource is used. By default, it's the URL to this repo. You can omit this header by setting it to `null`.
@@ -964,13 +1074,13 @@ It's a good idea to set the `'user-agent'` header so the provider can more easil
 const got = require('got');
 const pkg = require('./package.json');
 
-got('sindresorhus.com', {
+got('https://sindresorhus.com', {
 	headers: {
 		'user-agent': `my-package/${pkg.version} (https://github.com/username/my-package)`
 	}
 });
 
-got('sindresorhus.com', {
+got('https://sindresorhus.com', {
 	headers: {
 		'user-agent': null
 	}
@@ -993,7 +1103,7 @@ const pkg = require('./package.json');
 
 const custom = got.extend({
 	baseUrl: 'example.com',
-	json: true,
+	responseType: 'json',
 	headers: {
 		'user-agent': `my-package/${pkg.version} (https://github.com/username/my-package)`
 	}
@@ -1005,7 +1115,7 @@ const custom = got.extend({
 })();
 ```
 
-*Need to merge some instances into a single one? Check out [`got.mergeInstances()`](advanced-creation.md#merging-instances).*
+**Tip:** Need to merge some instances into a single one? Check out [`got.mergeInstances()`](advanced-creation.md#merging-instances).
 
 ### Experimental HTTP2 support
 
@@ -1025,87 +1135,185 @@ const h2got = got.extend({request});
 
 ## Comparison
 
-|                       |     `got`    |   `request`  | `node-fetch` |    `axios`   |
-|-----------------------|:------------:|:------------:|:------------:|:------------:|
-| HTTP/2 support        |      ❔      |       ✖      |       ✖      |       ✖      |
-| Browser support       |       ✖      |       ✖      |       ✔*     |       ✔      |
-| Electron support      |       ✔      |       ✖      |       ✖      |       ✖      |
-| Promise API           |       ✔      |       ✔      |       ✔      |       ✔      |
-| Stream API            |       ✔      |       ✔      | Node.js only |       ✖      |
-| Request cancelation   |       ✔      |       ✖      |       ✔      |       ✔      |
-| RFC compliant caching |       ✔      |       ✖      |       ✖      |       ✖      |
-| Cookies (out-of-box)  |       ✔      |       ✔      |       ✖      |       ✖      |
-| Follows redirects     |       ✔      |       ✔      |       ✔      |       ✔      |
-| Retries on failure    |       ✔      |       ✖      |       ✖      |       ✖      |
-| Progress events       |       ✔      |       ✖      |       ✖      | Browser only |
-| Handles gzip/deflate  |       ✔      |       ✔      |       ✔      |       ✔      |
-| Advanced timeouts     |       ✔      |       ✖      |       ✖      |       ✖      |
-| Timings               |       ✔      |       ✔      |       ✖      |       ✖      |
-| Errors with metadata  |       ✔      |       ✖      |       ✖      |       ✔      |
-| JSON mode             |       ✔      |       ✔      |       ✖      |       ✔      |
-| Custom defaults       |       ✔      |       ✔      |       ✖      |       ✔      |
-| Composable            |       ✔      |       ✖      |       ✖      |       ✖      |
-| Hooks                 |       ✔      |       ✖      |       ✖      |       ✔      |
-| Issues open           |   ![][gio]   |   ![][rio]   |   ![][nio]   |   ![][aio]   |
-| Issues closed         |   ![][gic]   |   ![][ric]   |   ![][nic]   |   ![][aic]   |
-| Downloads             |    ![][gd]   |    ![][rd]   |    ![][nd]   |    ![][ad]   |
-| Coverage              |    ![][gc]   |    ![][rc]   |    ![][nc]   |    ![][ac]   |
-| Build                 |    ![][gb]   |    ![][rb]   |    ![][nb]   |    ![][ab]   |
-| Bugs                  |   ![][gbg]   |   ![][rbg]   |   ![][nbg]   |   ![][abg]   |
-| Dependents            |   ![][gdp]   |   ![][rdp]   |   ![][ndp]   |   ![][adp]   |
-| Install size          |   ![][gis]   |   ![][ris]   |   ![][nis]   |   ![][ais]   |
+|                       |       `got`      | [`request`][r0] |  [`node-fetch`][n0]  |  [`axios`][a0]  |  [`superagent`][s0]  |
+|-----------------------|:----------------:|:---------------:|:--------------------:|:---------------:|:--------------------:|
+| HTTP/2 support        |        ❔        |        ❌       |          ❌         |        ❌       |          ✔️\*\*      |
+| Browser support       |        ❌       |        ❌       |          ✔️\*       |        ✔️       |          ✔️          |
+| Electron support      |        ✔️       |        ❌       |          ❌         |        ❌       |          ❌          |
+| Promise API           |        ✔️       |        ✔️       |          ✔️         |        ✔️       |          ✔️          |
+| Stream API            |        ✔️       |        ✔️       |     Node.js only     |        ❌       |          ✔️          |
+| Request cancelation   |        ✔️       |        ❌       |          ✔️         |        ✔️       |          ✔️          |
+| RFC compliant caching |        ✔️       |        ❌       |          ❌         |        ❌       |          ❌          |
+| Cookies (out-of-box)  |        ✔️       |        ✔️       |          ❌         |        ❌       |          ❌          |
+| Follows redirects     |        ✔️       |        ✔️       |          ✔️         |        ✔️       |          ✔️          |
+| Retries on failure    |        ✔️       |        ❌       |          ❌         |        ❌       |          ✔️          |
+| Progress events       |        ✔️       |        ❌       |          ❌         |   Browser only   |          ✔️          |
+| Handles gzip/deflate  |        ✔️       |        ✔️       |          ✔️         |        ✔️       |          ✔️          |
+| Advanced timeouts     |        ✔️       |        ❌       |          ❌         |        ❌       |          ❌          |
+| Timings               |        ✔️       |        ✔️       |          ❌         |        ❌       |          ❌          |
+| Errors with metadata  |        ✔️       |        ❌       |          ❌         |        ✔️       |          ❌          |
+| JSON mode             |        ✔️       |        ✔️       |          ✔️         |        ✔️       |          ✔️          |
+| Custom defaults       |        ✔️       |        ✔️       |          ❌         |        ✔️       |          ❌          |
+| Composable            |        ✔️       |        ❌       |          ❌         |        ❌       |          ✔️          |
+| Hooks                 |        ✔️       |        ❌       |          ❌         |        ✔️       |          ❌          |
+| Issues open           |  [![][gio]][g1]  | [![][rio]][r1]  |    [![][nio]][n1]    |  [![][aio]][a1] |    [![][sio]][s1]     |
+| Issues closed         |  [![][gic]][g2]  | [![][ric]][r2]  |    [![][nic]][n2]    |  [![][aic]][a2] |    [![][sic]][s2]     |
+| Downloads             |  [![][gd]][g3]   |  [![][rd]][r3]  |    [![][nd]][n3]     |  [![][ad]][a3]  |    [![][sd]][s3]      |
+| Coverage              |  [![][gc]][g4]   |  [![][rc]][r4]  |    [![][nc]][n4]     |  [![][ac]][a4]  |        unknown        |
+| Build                 |  [![][gb]][g5]   |  [![][rb]][r5]  |    [![][nb]][n5]     |  [![][ab]][a5]  |    [![][sb]][s5]      |
+| Bugs                  |  [![][gbg]][g6]  | [![][rbg]][r6]  |    [![][nbg]][n6]    |  [![][abg]][a6] |    [![][sbg]][s6]     |
+| Dependents            |  [![][gdp]][g7]  | [![][rdp]][r7]  |    [![][ndp]][n7]    |  [![][adp]][a7] |    [![][sdp]][s7]     |
+| Install size          |  [![][gis]][g8]  | [![][ris]][r8]  |    [![][nis]][n8]    |  [![][ais]][a8] |    [![][sis]][s8]     |
 
 \* It's almost API compatible with the browser `fetch` API.<br>
+\*\* Need to switch the protocol manually.<br>
 ❔ Experimental support.
 
+<!-- GITHUB -->
+[r0]: https://github.com/request/request
+[n0]: https://github.com/bitinn/node-fetch
+[a0]: https://github.com/axios/axios
+[s0]: https://github.com/visionmedia/superagent
+
 <!-- ISSUES OPEN -->
-[gio]: https://img.shields.io/github/issues/sindresorhus/got.svg
-[rio]: https://img.shields.io/github/issues/request/request.svg
-[nio]: https://img.shields.io/github/issues/bitinn/node-fetch.svg
-[aio]: https://img.shields.io/github/issues/axios/axios.svg
+[gio]: https://badgen.net/github/open-issues/sindresorhus/got?label
+[rio]: https://badgen.net/github/open-issues/request/request?label
+[nio]: https://badgen.net/github/open-issues/bitinn/node-fetch?label
+[aio]: https://badgen.net/github/open-issues/axios/axios?label
+[sio]: https://badgen.net/github/open-issues/visionmedia/superagent?label
+
+[g1]: https://github.com/sindresorhus/got/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc
+[r1]: https://github.com/request/request/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc
+[n1]: https://github.com/bitinn/node-fetch/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc
+[a1]: https://github.com/axios/axios/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc
+[s1]: https://github.com/visionmedia/superagent/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc
 
 <!-- ISSUES CLOSED -->
-[gic]: https://img.shields.io/github/issues-closed/sindresorhus/got.svg
-[ric]: https://img.shields.io/github/issues-closed/request/request.svg
-[nic]: https://img.shields.io/github/issues-closed/bitinn/node-fetch.svg
-[aic]: https://img.shields.io/github/issues-closed/axios/axios.svg
+[gic]: https://badgen.net/github/closed-issues/sindresorhus/got?label
+[ric]: https://badgen.net/github/closed-issues/request/request?label
+[nic]: https://badgen.net/github/closed-issues/bitinn/node-fetch?label
+[aic]: https://badgen.net/github/closed-issues/axios/axios?label
+[sic]: https://badgen.net/github/closed-issues/visionmedia/superagent?label
+
+[g2]: https://github.com/sindresorhus/got/issues?q=is%3Aissue+is%3Aclosed+sort%3Aupdated-desc
+[r2]: https://github.com/request/request/issues?q=is%3Aissue+is%3Aclosed+sort%3Aupdated-desc
+[n2]: https://github.com/bitinn/node-fetch/issues?q=is%3Aissue+is%3Aclosed+sort%3Aupdated-desc
+[a2]: https://github.com/axios/axios/issues?q=is%3Aissue+is%3Aclosed+sort%3Aupdated-desc
+[s2]: https://github.com/visionmedia/superagent/issues?q=is%3Aissue+is%3Aclosed+sort%3Aupdated-desc
 
 <!-- DOWNLOADS -->
-[gd]: https://img.shields.io/npm/dm/got.svg
-[rd]: https://img.shields.io/npm/dm/request.svg
-[nd]: https://img.shields.io/npm/dm/node-fetch.svg
-[ad]: https://img.shields.io/npm/dm/axios.svg
+[gd]: https://badgen.net/npm/dm/got?label
+[rd]: https://badgen.net/npm/dm/request?label
+[nd]: https://badgen.net/npm/dm/node-fetch?label
+[ad]: https://badgen.net/npm/dm/axios?label
+[sd]: https://badgen.net/npm/dm/superagent?label
+
+[g3]: https://www.npmjs.com/package/got
+[r3]: https://www.npmjs.com/package/request
+[n3]: https://www.npmjs.com/package/node-fetch
+[a3]: https://www.npmjs.com/package/axios
+[s3]: https://www.npmjs.com/package/superagent
 
 <!-- COVERAGE -->
-[gc]: https://coveralls.io/repos/github/sindresorhus/got/badge.svg?branch=master
-[rc]: https://coveralls.io/repos/github/request/request/badge.svg?branch=master
-[nc]: https://coveralls.io/repos/github/bitinn/node-fetch/badge.svg?branch=master
-[ac]: https://coveralls.io/repos/github/mzabriskie/axios/badge.svg?branch=master
+[gc]: https://badgen.net/coveralls/c/github/sindresorhus/got?label
+[rc]: https://badgen.net/coveralls/c/github/request/request?label
+[nc]: https://badgen.net/coveralls/c/github/bitinn/node-fetch?label
+[ac]: https://badgen.net/coveralls/c/github/mzabriskie/axios?label
+
+[g4]: https://coveralls.io/github/sindresorhus/got
+[r4]: https://coveralls.io/github/request/request
+[n4]: https://coveralls.io/github/bitinn/node-fetch
+[a4]: https://coveralls.io/github/mzabriskie/axios
 
 <!-- BUILD -->
-[gb]: https://travis-ci.org/sindresorhus/got.svg?branch=master
-[rb]: https://travis-ci.org/request/request.svg?branch=master
-[nb]: https://travis-ci.org/bitinn/node-fetch.svg?branch=master
-[ab]: https://travis-ci.org/axios/axios.svg?branch=master
+[gb]: https://badgen.net/travis/sindresorhus/got?label
+[rb]: https://badgen.net/travis/request/request?label
+[nb]: https://badgen.net/travis/bitinn/node-fetch?label
+[ab]: https://badgen.net/travis/axios/axios?label
+[sb]: https://badgen.net/travis/visionmedia/superagent?label
+
+[g5]: https://travis-ci.org/sindresorhus/got
+[r5]: https://travis-ci.org/request/request
+[n5]: https://travis-ci.org/bitinn/node-fetch
+[a5]: https://travis-ci.org/axios/axios
+[s5]: https://travis-ci.org/visionmedia/superagent
 
 <!-- BUGS -->
-[gbg]: https://badgen.net/github/label-issues/sindresorhus/got/bug/open
-[rbg]: https://badgen.net/github/label-issues/request/request/Needs%20investigation/open
-[nbg]: https://badgen.net/github/label-issues/bitinn/node-fetch/bug/open
-[abg]: https://badgen.net/github/label-issues/axios/axios/bug/open
+[gbg]: https://badgen.net/github/label-issues/sindresorhus/got/bug/open?label
+[rbg]: https://badgen.net/github/label-issues/request/request/Needs%20investigation/open?label
+[nbg]: https://badgen.net/github/label-issues/bitinn/node-fetch/bug/open?label
+[abg]: https://badgen.net/github/label-issues/axios/axios/bug/open?label
+[sbg]: https://badgen.net/github/label-issues/visionmedia/superagent/Bug/open?label
+
+[g6]: https://github.com/sindresorhus/got/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3Abug
+[r6]: https://github.com/request/request/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3A"Needs+investigation"
+[n6]: https://github.com/bitinn/node-fetch/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3Abug
+[a6]: https://github.com/axios/axios/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3Abug
+[s6]: https://github.com/visionmedia/superagent/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3ABug
 
 <!-- DEPENDENTS -->
-[gdp]: https://badgen.net/npm/dependents/got
-[rdp]: https://badgen.net/npm/dependents/request
-[ndp]: https://badgen.net/npm/dependents/node-fetch
-[adp]: https://badgen.net/npm/dependents/axios
+[gdp]: https://badgen.net/npm/dependents/got?label
+[rdp]: https://badgen.net/npm/dependents/request?label
+[ndp]: https://badgen.net/npm/dependents/node-fetch?label
+[adp]: https://badgen.net/npm/dependents/axios?label
+[sdp]: https://badgen.net/npm/dependents/superagent?label
+
+[g7]: https://www.npmjs.com/package/got?activeTab=dependents
+[r7]: https://www.npmjs.com/package/request?activeTab=dependents
+[n7]: https://www.npmjs.com/package/node-fetch?activeTab=dependents
+[a7]: https://www.npmjs.com/package/axios?activeTab=dependents
+[s7]: https://www.npmjs.com/package/visionmedia?activeTab=dependents
 
 <!-- INSTALL SIZE -->
-[gis]: https://packagephobia.now.sh/badge?p=got
-[ris]: https://packagephobia.now.sh/badge?p=request
-[nis]: https://packagephobia.now.sh/badge?p=node-fetch
-[ais]: https://packagephobia.now.sh/badge?p=axios
+[gis]: https://badgen.net/packagephobia/install/got?label
+[ris]: https://badgen.net/packagephobia/install/request?label
+[nis]: https://badgen.net/packagephobia/install/node-fetch?label
+[ais]: https://badgen.net/packagephobia/install/axios?label
+[sis]: https://badgen.net/packagephobia/install/superagent?label
 
+[g8]: https://packagephobia.now.sh/result?p=got
+[r8]: https://packagephobia.now.sh/result?p=request
+[n8]: https://packagephobia.now.sh/result?p=node-fetch
+[a8]: https://packagephobia.now.sh/result?p=axios
+[s8]: https://packagephobia.now.sh/result?p=superagent
+
+#### Install size of the dependencies
+
+|                   Dependency                   |          Install size         |
+|------------------------------------------------|-------------------------------|
+| [@sindresorhus/is][url-is]                     | ![][size-is]                  |
+| [@szmarczak/http-timer][url-http-timer]        | ![][size-http-timer]          |
+| [cacheable-request][url-cacheable-request]     | ![][size-cacheable-request]   |
+| [decompress-response][url-decompress-response] | ![][size-decompress-response] |
+| [duplexer3][url-duplexer3]                     | ![][size-duplexer3]           |
+| [get-stream][url-get-stream]                   | ![][size-get-stream]          |
+| [lowercase-keys][url-lowercase-keys]           | ![][size-lowercase-keys]      |
+| [mimic-response][url-mimic-response]           | ![][size-mimic-response]      |
+| [p-cancelable][url-p-cancelable]               | ![][size-p-cancelable]        |
+| [to-readable-stream][url-to-readable-stream]   | ![][size-to-readable-stream]  |
+|                                                | ![][gis]                      |
+
+[size-is]: https://badgen.net/packagephobia/install/@sindresorhus/is?label
+[size-http-timer]: https://badgen.net/packagephobia/install/@szmarczak/http-timer?label
+[size-cacheable-request]: https://badgen.net/packagephobia/install/cacheable-request?label
+[size-decompress-response]: https://badgen.net/packagephobia/install/decompress-response?label
+[size-duplexer3]: https://badgen.net/packagephobia/install/duplexer3?label
+[size-get-stream]: https://badgen.net/packagephobia/install/get-stream?label
+[size-lowercase-keys]: https://badgen.net/packagephobia/install/lowercase-keys?label
+[size-mimic-response]: https://badgen.net/packagephobia/install/mimic-response?label
+[size-p-cancelable]: https://badgen.net/packagephobia/install/p-cancelable?label
+[size-to-readable-stream]: https://badgen.net/packagephobia/install/to-readable-stream?label
+
+[url-is]: https://github.com/sindresorhus/is
+[url-http-timer]: https://github.com/szmarczak/http-timer
+[url-cacheable-request]: https://github.com/lukechilds/cacheable-request
+[url-decompress-response]: https://github.com/sindresorhus/decompress-response
+[url-duplexer3]: https://github.com/floatdrop/duplexer3
+[url-get-stream]: https://github.com/sindresorhus/get-stream
+[url-lowercase-keys]: https://github.com/sindresorhus/lowercase-keys
+[url-mimic-response]: https://github.com/sindresorhus/mimic-response
+[url-p-cancelable]: https://github.com/sindresorhus/p-cancelable
+[url-to-readable-stream]: https://github.com/sindresorhus/to-readable-stream
 
 ## Related
 

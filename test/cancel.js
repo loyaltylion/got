@@ -3,7 +3,7 @@ import {Readable} from 'stream';
 import test from 'ava';
 import pEvent from 'p-event';
 import PCancelable from 'p-cancelable';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 async function createAbortServer() {
@@ -43,7 +43,7 @@ test('cancel do not retry after cancelation', async t => {
 
 	const p = got(helper.redirectUrl, {
 		retry: {
-			retries: _ => {
+			retries: () => {
 				t.fail('Makes a new try after cancelation');
 			}
 		}

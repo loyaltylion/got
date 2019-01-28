@@ -2,18 +2,26 @@
 const {URL, URLSearchParams} = require('url'); // TODO: Use the `URL` global when targeting Node.js 10
 const urlLib = require('url');
 const is = require('@sindresorhus/is');
-const urlParseLax = require('url-parse-lax');
 const lowercaseKeys = require('lowercase-keys');
-const isRetryOnNetworkErrorAllowed = require('./utils/is-retry-on-network-error-allowed');
-const urlToOptions = require('./utils/url-to-options');
-const isFormData = require('./utils/is-form-data');
+const urlToOptions = require('./utils/url-to-options').default;
+const validateSearchParams = require('./utils/validate-search-params').default;
+const supportsBrotli = require('./utils/supports-brotli').default;
 const merge = require('./merge');
-const knownHookEvents = require('./known-hook-events');
+const knownHookEvents = require('./known-hook-events').default;
 
 const retryAfterStatusCodes = new Set([413, 429, 503]);
 
-// `preNormalize` handles static things (lowercasing headers; normalizing baseUrl, timeout, retry)
-// While `normalize` does `preNormalize` + handles things which need to be reworked when user changes them
+let shownDeprecation = false;
+
+// `preNormalize` handles static options (e.g. headers).
+// For example, when you create a custom instance and make a request
+// with no static changes, they won't be normalized again.
+//
+// `normalize` operates on dynamic options - they cannot be saved.
+// For example, `body` is everytime different per request.
+// When it's done normalizing the new options, it performs merge()
+// on the prenormalized options and the normalized ones.
+
 const preNormalize = (options, defaults) => {
 	if (is.nullOrUndefined(options.headers)) {
 		options.headers = {};
@@ -23,10 +31,6 @@ const preNormalize = (options, defaults) => {
 
 	if (options.baseUrl && !options.baseUrl.toString().endsWith('/')) {
 		options.baseUrl += '/';
-	}
-
-	if (options.stream) {
-		options.json = false;
 	}
 
 	if (is.nullOrUndefined(options.hooks)) {
@@ -50,13 +54,15 @@ const preNormalize = (options, defaults) => {
 	} else if (is.object(options.timeout)) {
 		options.gotTimeout = options.timeout;
 	}
+
 	delete options.timeout;
 
 	const {retry} = options;
 	options.retry = {
 		retries: 0,
 		methods: [],
-		statusCodes: []
+		statusCodes: [],
+		errorCodes: []
 	};
 
 	if (is.nonEmptyObject(defaults) && retry !== false) {
@@ -81,6 +87,10 @@ const preNormalize = (options, defaults) => {
 
 	if (is.array(options.retry.statusCodes)) {
 		options.retry.statusCodes = new Set(options.retry.statusCodes);
+	}
+
+	if (is.array(options.retry.errorCodes)) {
+		options.retry.errorCodes = new Set(options.retry.errorCodes);
 	}
 
 	return options;
@@ -108,22 +118,25 @@ const normalize = (url, options, defaults) => {
 			if (url.toString().startsWith('/')) {
 				url = url.toString().slice(1);
 			}
-
-			url = urlToOptions(new URL(url, options.baseUrl));
 		} else {
 			url = url.replace(/^unix:/, 'http://$&');
-
-			url = urlParseLax(url);
-			if (url.auth) {
-				throw new Error('Basic authentication must be done with the `auth` option');
-			}
 		}
+
+		url = urlToOptions(new URL(url, options.baseUrl));
 	} else if (is(url) === 'URL') {
 		url = urlToOptions(url);
 	}
 
 	// Override both null/undefined with default protocol
 	options = merge({path: ''}, url, {protocol: url.protocol || 'https:'}, options);
+
+	for (const hook of options.hooks.init) {
+		const called = hook(options);
+
+		if (is.promise(called)) {
+			throw new TypeError('The `init` hook must be a synchronous function');
+		}
+	}
 
 	const {baseUrl} = options;
 	Object.defineProperty(options, 'baseUrl', {
@@ -133,13 +146,30 @@ const normalize = (url, options, defaults) => {
 		get: () => baseUrl
 	});
 
-	const {query} = options;
-	if (is.nonEmptyString(query) || is.nonEmptyObject(query) || query instanceof URLSearchParams) {
-		if (!is.string(query)) {
-			options.query = (new URLSearchParams(query)).toString();
+	let searchParams;
+	if (options.query) {
+		if (!shownDeprecation) {
+			console.warn('`options.query` is deprecated. We support it solely for compatibility - it will be removed in Got 11. Use `options.searchParams` instead.');
+			shownDeprecation = true;
 		}
-		options.path = `${options.path.split('?')[0]}?${options.query}`;
+
+		searchParams = options.query;
 		delete options.query;
+	} else if (options.searchParams) {
+		searchParams = options.searchParams;
+		delete options.searchParams;
+	}
+
+	if (is.nonEmptyString(searchParams) || is.nonEmptyObject(searchParams) || searchParams instanceof URLSearchParams) {
+		if (!is.string(searchParams)) {
+			if (!(searchParams instanceof URLSearchParams)) {
+				validateSearchParams(searchParams);
+			}
+
+			searchParams = (new URLSearchParams(searchParams)).toString();
+		}
+
+		options.path = `${options.path.split('?')[0]}?${searchParams}`;
 	}
 
 	if (options.hostname === 'unix') {
@@ -163,43 +193,14 @@ const normalize = (url, options, defaults) => {
 		}
 	}
 
-	if (options.json && is.undefined(headers.accept)) {
-		headers.accept = 'application/json';
-	}
-
 	if (options.decompress && is.undefined(headers['accept-encoding'])) {
-		headers['accept-encoding'] = 'gzip, deflate';
+		headers['accept-encoding'] = supportsBrotli ? 'gzip, deflate, br' : 'gzip, deflate';
 	}
 
-	const {body} = options;
-	if (is.nullOrUndefined(body)) {
-		options.method = options.method ? options.method.toUpperCase() : 'GET';
+	if (options.method) {
+		options.method = options.method.toUpperCase();
 	} else {
-		const isObject = is.object(body) && !is.buffer(body) && !is.nodeStream(body);
-		if (!is.nodeStream(body) && !is.string(body) && !is.buffer(body) && !(options.form || options.json)) {
-			throw new TypeError('The `body` option must be a stream.Readable, string or Buffer');
-		}
-
-		if (options.json && !(isObject || is.array(body))) {
-			throw new TypeError('The `body` option must be an Object or Array when the `json` option is used');
-		}
-
-		if (options.form && !isObject) {
-			throw new TypeError('The `body` option must be an Object when the `form` option is used');
-		}
-
-		if (isFormData(body)) {
-			// Special case for https://github.com/form-data/form-data
-			headers['content-type'] = headers['content-type'] || `multipart/form-data; boundary=${body.getBoundary()}`;
-		} else if (options.form) {
-			headers['content-type'] = headers['content-type'] || 'application/x-www-form-urlencoded';
-			options.body = (new URLSearchParams(body)).toString();
-		} else if (options.json) {
-			headers['content-type'] = headers['content-type'] || 'application/json';
-			options.body = JSON.stringify(body);
-		}
-
-		options.method = options.method ? options.method.toUpperCase() : 'POST';
+		options.method = is.nullOrUndefined(options.body) ? 'GET' : 'POST';
 	}
 
 	if (!is.function(options.retry.retries)) {
@@ -210,7 +211,7 @@ const normalize = (url, options, defaults) => {
 				return 0;
 			}
 
-			if (!isRetryOnNetworkErrorAllowed(error) && (!options.retry.methods.has(error.method) || !options.retry.statusCodes.has(error.statusCode))) {
+			if ((!error || !options.retry.errorCodes.has(error.code)) && (!options.retry.methods.has(error.method) || !options.retry.statusCodes.has(error.statusCode))) {
 				return 0;
 			}
 

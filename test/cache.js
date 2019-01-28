@@ -1,5 +1,5 @@
 import test from 'ava';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 let s;
@@ -40,6 +40,7 @@ test.before('setup', async () => {
 			response.setHeader('Location', `${s.url}/302`);
 			response.statusCode = 301;
 		}
+
 		response.end();
 		status301Index++;
 	});
@@ -51,6 +52,7 @@ test.before('setup', async () => {
 			response.setHeader('Location', `${s.url}/cache`);
 			response.statusCode = 302;
 		}
+
 		response.end();
 		status302Index++;
 	});
@@ -110,6 +112,21 @@ test('Redirects are cached and re-used internally', async t => {
 	t.is(firstResponse.body, secondResponse.body);
 });
 
+test('Cached response should have got options', async t => {
+	const endpoint = '/cache';
+	const cache = new Map();
+	const options = {
+		url: s.url + endpoint,
+		auth: 'foo:bar',
+		cache
+	};
+
+	await got(options);
+	const secondResponse = await got(options);
+
+	t.is(secondResponse.request.gotOptions.auth, options.auth);
+});
+
 test('Cache error throws got.CacheError', async t => {
 	const endpoint = '/no-store';
 	const cache = {};
@@ -122,7 +139,7 @@ test('doesn\'t cache response when received HTTP error', async t => {
 	const endpoint = '/first-error';
 	const cache = new Map();
 
-	const response = await got(s.url + endpoint, {cache, throwHttpErrors: false});
-	t.is(response.statusCode, 200);
-	t.deepEqual(response.body, 'ok');
+	const {statusCode, body} = await got(s.url + endpoint, {cache, throwHttpErrors: false});
+	t.is(statusCode, 200);
+	t.deepEqual(body, 'ok');
 });

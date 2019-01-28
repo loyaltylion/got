@@ -1,5 +1,5 @@
 import test from 'ava';
-import got from '../source';
+import got from '../dist';
 import {createSSLServer} from './helpers/server';
 
 let s;
@@ -26,13 +26,4 @@ test('make request to https server with ca', async t => {
 		headers: {host: 'sindresorhus.com'}
 	});
 	t.is(body, 'ok');
-});
-
-test('protocol-less URLs default to HTTPS', async t => {
-	const {body, requestUrl} = await got(s.url.replace(/^https:\/\//, ''), {
-		ca: s.caRootCert,
-		headers: {host: 'sindresorhus.com'}
-	});
-	t.is(body, 'ok');
-	t.true(requestUrl.startsWith('https://'));
 });

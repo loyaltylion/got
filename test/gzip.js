@@ -1,8 +1,8 @@
-import util from 'util';
+import {promisify} from 'util';
 import zlib from 'zlib';
 import test from 'ava';
 import getStream from 'get-stream';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 const testContent = 'Compressible response content.\n';
@@ -13,7 +13,7 @@ let gzipData;
 
 test.before('setup', async () => {
 	s = await createServer();
-	gzipData = await util.promisify(zlib.gzip)(testContent);
+	gzipData = await promisify(zlib.gzip)(testContent);
 
 	s.on('/', (request, response) => {
 		response.statusCode = 200;
@@ -78,13 +78,13 @@ test('handles gzip error - stream', async t => {
 });
 
 test('decompress option opts out of decompressing', async t => {
-	const response = await got(s.url, {decompress: false});
-	t.true(Buffer.compare(response.body, gzipData) === 0);
+	const {body} = await got(s.url, {decompress: false});
+	t.is(Buffer.compare(body, gzipData), 0);
 });
 
 test('decompress option doesn\'t alter encoding of uncompressed responses', async t => {
-	const response = await got(`${s.url}/uncompressed`, {decompress: false});
-	t.is(response.body, testContentUncompressed);
+	const {body} = await got(`${s.url}/uncompressed`, {decompress: false});
+	t.is(body, testContentUncompressed);
 });
 
 test('preserve headers property', async t => {

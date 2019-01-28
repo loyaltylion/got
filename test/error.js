@@ -2,7 +2,7 @@ import http from 'http';
 import test from 'ava';
 import getStream from 'get-stream';
 import proxyquire from 'proxyquire';
-import got from '../source';
+import got from '../dist';
 import {createServer} from './helpers/server';
 
 let s;
@@ -59,37 +59,25 @@ test('properties', async t => {
 });
 
 test('dns message', async t => {
-	const error = await t.throwsAsync(got('.com', {retry: 0}));
+	const error = await t.throwsAsync(got('http://doesntexist', {retry: 0}));
 	t.truthy(error);
 	t.regex(error.message, /getaddrinfo ENOTFOUND/);
-	t.is(error.host, '.com');
+	t.is(error.host, 'doesntexist');
 	t.is(error.method, 'GET');
 });
 
-test('options.body error message', async t => {
-	await t.throwsAsync(got(s.url, {body: {}}), {
-		message: 'The `body` option must be a stream.Readable, string or Buffer'
-	});
-});
-
-test('options.body json error message', async t => {
-	await t.throwsAsync(got(s.url, {body: Buffer.from('test'), json: true}), {
-		message: 'The `body` option must be an Object or Array when the `json` option is used'
-	});
-});
-
 test('options.body form error message', async t => {
-	await t.throwsAsync(got(s.url, {body: Buffer.from('test'), form: true}), {
-		message: 'The `body` option must be an Object when the `form` option is used'
+	await t.throwsAsync(got(s.url, {body: Buffer.from('test'), form: ''}), {
+		message: 'The `body` option cannot be used with the `json` option or `form` option'
 	});
 });
 
-test('no plain object restriction on body', async t => {
+test('no plain object restriction on json body', async t => {
 	function CustomObject() {
 		this.a = 123;
 	}
 
-	const {body} = await got(`${s.url}/body`, {body: new CustomObject(), json: true});
+	const body = await got(`${s.url}/body`, {json: new CustomObject()}).json();
 
 	t.deepEqual(body, {a: 123});
 });
@@ -112,6 +100,16 @@ test('custom body', async t => {
 	t.is(error.body, 'not');
 });
 
+test('contains Got options', async t => {
+	const options = {
+		url: s.url,
+		auth: 'foo:bar'
+	};
+
+	const error = await t.throwsAsync(got(options));
+	t.is(error.gotOptions.auth, options.auth);
+});
+
 test('no status message is overriden by the default one', async t => {
 	const error = await t.throwsAsync(got(`${s.url}/no-status-message`));
 	t.is(error.statusCode, 400);
@@ -123,24 +121,30 @@ test('http.request error', async t => {
 		request: () => {
 			throw new TypeError('The header content contains invalid characters');
 		}
-	}), {instanceOf: got.RequestError, message: 'The header content contains invalid characters'});
+	}), {
+		instanceOf: got.RequestError,
+		message: 'The header content contains invalid characters'
+	});
 });
 
 test('http.request pipe error', async t => {
-	const error = 'snap!';
+	const message = 'snap!';
 
 	await t.throwsAsync(got(s.url, {
-		request: (...opts) => {
-			const modified = http.request(...opts);
+		request: (...options) => {
+			const modified = http.request(...options);
 			modified.end = () => {
 				modified.abort();
-				throw new Error(error);
+				throw new Error(message);
 			};
 
 			return modified;
 		},
 		throwHttpErrors: false
-	}), {instanceOf: got.RequestError, message: error});
+	}), {
+		instanceOf: got.RequestError,
+		message
+	});
 });
 
 test('http.request error through CacheableRequest', async t => {
@@ -149,13 +153,17 @@ test('http.request error through CacheableRequest', async t => {
 			throw new TypeError('The header content contains invalid characters');
 		},
 		cache: new Map()
-	}), {instanceOf: got.RequestError, message: 'The header content contains invalid characters'});
+	}), {
+		instanceOf: got.RequestError,
+		message: 'The header content contains invalid characters'
+	});
 });
 
 test('catch error in mimicResponse', async t => {
 	const mimicResponse = () => {
 		throw new Error('Error in mimic-response');
 	};
+
 	mimicResponse['@global'] = true;
 
 	const proxiedGot = proxyquire('..', {
@@ -166,7 +174,7 @@ test('catch error in mimicResponse', async t => {
 });
 
 test('errors are thrown directly when options.stream is true', t => {
-	t.throws(() => got(s.url, {stream: true, body: {}}), {
-		message: 'The `body` option must be a stream.Readable, string or Buffer'
+	t.throws(() => got(s.url, {stream: true, hooks: false}), {
+		message: 'Parameter `hooks` must be an object, not boolean'
 	});
 });

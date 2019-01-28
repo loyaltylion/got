@@ -1,5 +1,5 @@
 'use strict';
-const {URL} = require('url'); // TODO: Use the `URL` global when targeting Node.js 10
+const {URL, URLSearchParams} = require('url'); // TODO: Use the `URL` global when targeting Node.js 10
 const util = require('util');
 const EventEmitter = require('events');
 const http = require('http');
@@ -10,11 +10,12 @@ const toReadableStream = require('to-readable-stream');
 const is = require('@sindresorhus/is');
 const timer = require('@szmarczak/http-timer');
 const timedOut = require('./utils/timed-out');
-const getBodySize = require('./utils/get-body-size');
-const getResponse = require('./get-response');
+const getBodySize = require('./utils/get-body-size').default;
+const isFormData = require('./utils/is-form-data').default;
+const getResponse = require('./get-response').default;
 const progress = require('./progress');
 const {CacheError, UnsupportedProtocolError, MaxRedirectsError, RequestError, TimeoutError} = require('./errors');
-const urlToOptions = require('./utils/url-to-options');
+const urlToOptions = require('./utils/url-to-options').default;
 
 const getMethodRedirectCodes = new Set([300, 301, 302, 303, 304, 305, 307, 308]);
 const allMethodRedirectCodes = new Set([300, 303, 307, 308]);
@@ -32,6 +33,19 @@ module.exports = (options, input) => {
 	const setCookie = options.cookieJar ? util.promisify(options.cookieJar.setCookie.bind(options.cookieJar)) : null;
 	const getCookieString = options.cookieJar ? util.promisify(options.cookieJar.getCookieString.bind(options.cookieJar)) : null;
 	const agents = is.object(options.agent) ? options.agent : null;
+
+	const emitError = async error => {
+		try {
+			for (const hook of options.hooks.beforeError) {
+				// eslint-disable-next-line no-await-in-loop
+				error = await hook(error);
+			}
+
+			emitter.emit('error', error);
+		} catch (error2) {
+			emitter.emit('error', error2);
+		}
+	};
 
 	const get = async options => {
 		const currentUrl = redirectString || requestUrl;
@@ -92,6 +106,9 @@ module.exports = (options, input) => {
 				response.retryCount = retryCount;
 				response.timings = timings;
 				response.redirectUrls = redirects;
+				response.request = {
+					gotOptions: options
+				};
 
 				const rawCookies = response.headers['set-cookie'];
 				if (options.cookieJar && rawCookies) {
@@ -119,51 +136,50 @@ module.exports = (options, input) => {
 
 						redirects.push(redirectString);
 
-						const redirectOpts = {
+						const redirectOptions = {
 							...options,
 							...urlToOptions(redirectURL)
 						};
 
 						for (const hook of options.hooks.beforeRedirect) {
 							// eslint-disable-next-line no-await-in-loop
-							await hook(redirectOpts);
+							await hook(redirectOptions);
 						}
 
-						emitter.emit('redirect', response, redirectOpts);
+						emitter.emit('redirect', response, redirectOptions);
 
-						await get(redirectOpts);
+						await get(redirectOptions);
 						return;
 					}
 				}
 
 				getResponse(response, options, emitter);
 			} catch (error) {
-				emitter.emit('error', error);
+				emitError(error);
 			}
 		};
 
 		const handleRequest = request => {
 			if (shouldAbort) {
-				request.once('error', () => {});
 				request.abort();
 				return;
 			}
 
 			currentRequest = request;
 
-			request.once('error', error => {
-				if (request.aborted) {
+			request.on('error', error => {
+				if (request.aborted || error.message === 'socket hang up') {
 					return;
 				}
 
 				if (error instanceof timedOut.TimeoutError) {
-					error = new TimeoutError(error, options);
+					error = new TimeoutError(error, timings, options);
 				} else {
 					error = new RequestError(error, options);
 				}
 
 				if (emitter.retry(error) === false) {
-					emitter.emit('error', error);
+					emitError(error);
 				}
 			});
 
@@ -172,7 +188,7 @@ module.exports = (options, input) => {
 			progress.upload(request, emitter, uploadBodySize);
 
 			if (options.gotTimeout) {
-				timedOut(request, options.gotTimeout, options);
+				timedOut.default(request, options.gotTimeout, options);
 			}
 
 			emitter.emit('request', request);
@@ -195,29 +211,29 @@ module.exports = (options, input) => {
 					request.end(uploadComplete);
 				}
 			} catch (error) {
-				emitter.emit('error', new RequestError(error, options));
+				emitError(new RequestError(error, options));
 			}
 		};
 
 		if (options.cache) {
 			const cacheableRequest = new CacheableRequest(fn.request, options.cache);
-			const cacheReq = cacheableRequest(options, handleResponse);
+			const cacheRequest = cacheableRequest(options, handleResponse);
 
-			cacheReq.once('error', error => {
+			cacheRequest.once('error', error => {
 				if (error instanceof CacheableRequest.RequestError) {
-					emitter.emit('error', new RequestError(error, options));
+					emitError(new RequestError(error, options));
 				} else {
-					emitter.emit('error', new CacheError(error, options));
+					emitError(new CacheError(error, options));
 				}
 			});
 
-			cacheReq.once('request', handleRequest);
+			cacheRequest.once('request', handleRequest);
 		} else {
 			// Catches errors thrown by calling fn.request(...)
 			try {
 				handleRequest(fn.request(options, handleResponse));
 			} catch (error) {
-				emitter.emit('error', new RequestError(error, options));
+				emitError(new RequestError(error, options));
 			}
 		}
 	};
@@ -228,7 +244,7 @@ module.exports = (options, input) => {
 		try {
 			backoff = options.retry.retries(++retryCount, error);
 		} catch (error2) {
-			emitter.emit('error', error2);
+			emitError(error2);
 			return;
 		}
 
@@ -242,7 +258,7 @@ module.exports = (options, input) => {
 
 					await get(options);
 				} catch (error) {
-					emitter.emit('error', error);
+					emitError(error);
 				}
 			};
 
@@ -255,7 +271,6 @@ module.exports = (options, input) => {
 
 	emitter.abort = () => {
 		if (currentRequest) {
-			currentRequest.once('error', () => {});
 			currentRequest.abort();
 		} else {
 			shouldAbort = true;
@@ -264,8 +279,39 @@ module.exports = (options, input) => {
 
 	setImmediate(async () => {
 		try {
+			for (const hook of options.hooks.beforeRequest) {
+				// eslint-disable-next-line no-await-in-loop
+				await hook(options);
+			}
+
+			// Serialize body
+			const {body, headers} = options;
+			const isForm = !is.nullOrUndefined(options.form);
+			const isJSON = !is.nullOrUndefined(options.json);
+			if (!is.nullOrUndefined(body)) {
+				if (isForm || isJSON) {
+					throw new TypeError('The `body` option cannot be used with the `json` option or `form` option');
+				}
+
+				if (is.object(body) && isFormData(body)) {
+					// Special case for https://github.com/form-data/form-data
+					headers['content-type'] = headers['content-type'] || `multipart/form-data; boundary=${body.getBoundary()}`;
+				} else if (!is.nodeStream(body) && !is.string(body) && !is.buffer(body)) {
+					throw new TypeError('The `body` option must be a stream.Readable, string, Buffer, Object or Array');
+				}
+			} else if (isForm) {
+				if (!is.object(options.form)) {
+					throw new TypeError('The `form` option must be an Object');
+				}
+
+				headers['content-type'] = headers['content-type'] || 'application/x-www-form-urlencoded';
+				options.body = (new URLSearchParams(options.form)).toString();
+			} else if (isJSON) {
+				headers['content-type'] = headers['content-type'] || 'application/json';
+				options.body = JSON.stringify(options.json);
+			}
+
 			// Convert buffer to stream to receive upload progress events (#322)
-			const {body} = options;
 			if (is.buffer(body)) {
 				options.body = toReadableStream(body);
 				uploadBodySize = body.length;
@@ -273,22 +319,21 @@ module.exports = (options, input) => {
 				uploadBodySize = await getBodySize(options);
 			}
 
-			if (is.undefined(options.headers['content-length']) && is.undefined(options.headers['transfer-encoding'])) {
-				if ((uploadBodySize > 0 || options.method === 'PUT') && !is.null(uploadBodySize)) {
-					options.headers['content-length'] = uploadBodySize;
+			if (is.undefined(headers['content-length']) && is.undefined(headers['transfer-encoding'])) {
+				if ((uploadBodySize > 0 || options.method === 'PUT') && !is.undefined(uploadBodySize)) {
+					headers['content-length'] = uploadBodySize;
 				}
 			}
 
-			for (const hook of options.hooks.beforeRequest) {
-				// eslint-disable-next-line no-await-in-loop
-				await hook(options);
+			if (!options.stream && options.responseType === 'json' && is.undefined(headers.accept)) {
+				options.headers.accept = 'application/json';
 			}
 
 			requestUrl = options.href || (new URL(options.path, urlLib.format(options))).toString();
 
 			await get(options);
 		} catch (error) {
-			emitter.emit('error', error);
+			emitError(error);
 		}
 	});
 

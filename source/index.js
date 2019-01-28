@@ -22,6 +22,16 @@ const defaults = {
 				502,
 				503,
 				504
+			],
+			errorCodes: [
+				'ETIMEDOUT',
+				'ECONNRESET',
+				'EADDRINUSE',
+				'ECONNREFUSED',
+				'EPIPE',
+				'ENOTFOUND',
+				'ENETUNREACH',
+				'EAI_AGAIN'
 			]
 		},
 		headers: {
@@ -37,10 +47,10 @@ const defaults = {
 		throwHttpErrors: true,
 		followRedirect: true,
 		stream: false,
-		form: false,
-		json: false,
 		cache: false,
-		useElectronNet: false
+		useElectronNet: false,
+		responseType: 'text',
+		resolveBodyOnly: false
 	},
 	mutableDefaults: false
 };
